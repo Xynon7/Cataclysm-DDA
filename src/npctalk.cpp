@@ -160,13 +160,13 @@ void game::init_npctalk()
     for(int j=0; j<10; j++) {talk_okay[j] = tmp_talk_okay[j];}
 
     std::string tmp_talk_no[10] = {
-    _("no"), _("fuck no"), _("hell no"), _("no way"), _("not a chance"),
-    _("I don't think so"), _("no way in hell"), _("nuh uh"), _("nope"), _("fat chance")};
+    _("no"), _("NO"), _("NO"), _("no way"), _("not a chance"),
+    _("I don't think so"), _("no way"), _("nuh uh"), _("nope"), _("fat chance")};
     for(int j=0; j<10; j++) {talk_no[j] = tmp_talk_no[j];}
 
     std::string tmp_talk_bad_names[10] = {
-    _("punk"),  _("loser"), _("dickhead"), _("asshole"), _("fucker"),
-    _("sucker"), _("fuckwad"), _("jerk"), _("motherfucker"), _("shithead")};
+    _("punk"),  _("loser"), _("loser"), _("jerk"), _("punk"),
+    _("sucker"), _("sucker"), _("jerk"), _("punk"), _("jerk")};
     for(int j=0; j<10; j++) {talk_bad_names[j] = tmp_talk_bad_names[j];}
 
     std::string tmp_talk_good_names[10] = {
@@ -175,28 +175,28 @@ void game::init_npctalk()
     for(int j=0; j<10; j++) {talk_good_names[j] = tmp_talk_good_names[j];}
 
     std::string tmp_talk_swear[10] = { // e.g. _("drop the <swear> weapon")
-    _("fucking"), _("goddamn"), _("motherfucking"), _("freaking"), _("damn"), _("<swear> <swear>"),
-    _("fucking"), _("fuckin'"), _("god damn"), _("mafuckin'")};
+    _("dang"), _("dang"), _("darn"), _("darn"), _("dang"), _("<swear> <swear>"),
+    _("dang"), _("dang'"), _("dang"), _("darn")};
     for(int j=0; j<10; j++) {talk_swear[j] = tmp_talk_swear[j];}
 
     std::string tmp_talk_swear_interjection[10] = {
-    _("fuck"), _("damn"), _("damnit"), _("shit"), _("fuckit"), _("crap"),
-    _("motherfucker"), _("<swear><punc> <swear!>"), _("<very> <swear!>"), _("son of an ass")};
+    _("dang"), _("dang"), _("dang"), _("dang"), _("dang"), _("darn"),
+    _("darn"), _("<swear><punc> <swear!>"), _("<very> <swear!>"), _("darn")};
     for(int j=0; j<10; j++) {talk_swear_interjection[j] = tmp_talk_swear_interjection[j];}
 
     std::string tmp_talk_fuck_you[10] = {
-    _("fuck you"), _("fuck off"), _("go fuck yourself"), _("<fuck_you>, <name_b>"),
+    _("..."), _("..."), _("..."), _("<fuck_you>, <name_b>"),
     _("<fuck_you>, <swear> <name_b>"), _("<name_b>"), _("<swear> <name_b>"),
-    _("fuck you"), _("fuck off"), _("go fuck yourself")};
+    _("..."), _("..."), _("...")};
     for(int j=0; j<10; j++) {talk_fuck_you[j] = tmp_talk_fuck_you[j];}
 
     std::string tmp_talk_very[10] = { // Synonyms for _("very") -- applied to adjectives
-    _("really"), _("fucking"), _("super"), _("wicked"), _("very"), _("mega"), _("uber"), _("ultra"),
+    _("really"), _("really really"), _("super"), _("wicked"), _("very"), _("mega"), _("uber"), _("ultra"),
     _("so <very>"), _("<very> <very>")};
     for(int j=0; j<10; j++) {talk_very[j] = tmp_talk_very[j];}
 
     std::string tmp_talk_really[10] = { // Synonyms for _("really") -- applied to verbs
-    _("really"), _("fucking"), _("absolutely"), _("definitely"), _("for real"), _("honestly"),
+    _("really"), _("really really"), _("absolutely"), _("definitely"), _("for real"), _("honestly"),
     _("<really> <really>"), _("most <really>"), _("urgently"), _("REALLY")};
     for(int j=0; j<10; j++) {talk_really[j] = tmp_talk_really[j];}
 
@@ -206,7 +206,7 @@ void game::init_npctalk()
     for(int j=0; j<10; j++) {talk_happy[j] = tmp_talk_happy[j];}
 
     std::string tmp_talk_sad[10] = {
-    _("sad"), _("bummed"), _("depressed"), _("pissed"), _("unhappy"), _("<very> <sad>"), _("dejected"),
+    _("sad"), _("bummed"), _("depressed"), _("unhappy"), _("unhappy"), _("<very> <sad>"), _("dejected"),
     _("down"), _("blue"), _("glum")};
     for(int j=0; j<10; j++) {talk_sad[j] = tmp_talk_sad[j];}
 
@@ -332,12 +332,12 @@ void game::init_npctalk()
     // Used to tell player to move to avoid friendly fire
     std::string tmp_talk_move[10] = {
     _("Move"),
-    _("Move your ass"),
+    _("Move it"),
     _("Get out of the way"),
     _("You need to move"),
     _("Hey <name_g>, move"),
     _("<swear> move it"),
-    _("Move your <swear> ass"),
+    _("Move it"),
     _("Get out of my way, <name_b>,"),
     _("Move to the side"),
     _("Get out of my line of fire")
@@ -350,7 +350,7 @@ void game::init_npctalk()
     _("Thanks a lot, <name_g>!"),
     _("Catch you later, <name_g>!"),
     _("See you later, <name_b>!"),
-    _("See you in hell, <name_b>!"),
+    _("See ya, <name_b>!"),
     _("Hasta luego, <name_g>!"),
     _("I'm outta here! <done_mugging>"),
     _("Bye bye, <name_b>!"),
