@@ -98,7 +98,7 @@
     "turns_per_charge": 0,
     "ammo": "NULL",
     "revert_to": "null",
-    "use_action": "LIGHTER"
+    "use_action": "FIRESTARTER"
   },
 
   {
@@ -121,7 +121,7 @@
     "turns_per_charge": 0,
     "ammo": "NULL",
     "revert_to": "null",
-    "use_action": "LIGHTER"
+    "use_action": "FIRESTARTER"
   },
 
   {
@@ -144,7 +144,8 @@
     "turns_per_charge": 0,
     "ammo": "NULL",
     "revert_to": "null",
-    "use_action": "PRIMITIVE_FIRE"
+    "flags": [ "FIRE_DRILL" ],
+    "use_action": "FIRESTARTER"
   },
 
   {
@@ -167,7 +168,32 @@
     "turns_per_charge": 0,
     "ammo": "NULL",
     "revert_to": "null",
-    "use_action": "PRIMITIVE_FIRE"
+    "flags": [ "FIRE_DRILL" ],
+    "use_action": "FIRESTARTER"
+  },
+
+  {
+    "id": "magnifying_glass",
+    "type": "TOOL",
+    "symbol": "o",
+    "color": "green",
+    "name": "magnifying glass",
+    "description": "This is a magnifying glass.  May be useful for starting fires during sunny skies.",
+    "price": 2000,
+    "material": ["glass", "plastic"],
+    "flags": [ "LENS" ],
+    "weight": 400,
+    "volume": 1,
+    "bashing": 0,
+    "cutting": -5,
+    "to_hit": -1,
+    "ammo": "NULL",
+    "revert_to": "null",
+    "max_charges": 0,
+    "initial_charges": 0,
+    "charges_per_use": 0,
+    "turns_per_charge": 0,
+    "use_action": "FIRESTARTER"
   },
 
   {
@@ -1263,8 +1289,8 @@
     "color": "blue",
     "name": "tourist guide",
     "description": "This is glossy printed pamphlet for tourists that details local hotels and attractions.",
-    "price": 10000,
-    "material": "plastic",
+    "price": 100,
+    "material": "paper",
     "weight": 30,
     "volume": 1,
     "bashing": 0,
@@ -3133,7 +3159,15 @@
     "turns_per_charge": 0,
     "ammo": "NULL",
     "revert_to": "null",
-    "use_action": "MANHACK"
+    "use_action": {
+        "type": "place_monster",
+        "monster_id": "mon_manhack",
+        "difficulty": 4,
+        "hostile_msg": "You misprogram the manhack; it's hostile!",
+        "friendly_msg": "The manhack flies from your hand and surveys the area!",
+        "place_randomly": true,
+        "moves": 60
+    }
   },
   {
     "id": "bot_turret",
@@ -3155,7 +3189,12 @@
     "turns_per_charge": 0,
     "ammo": "NULL",
     "revert_to": "null",
-    "use_action": "TURRET"
+    "use_action": {
+        "type": "place_monster",
+        "monster_id": "mon_turret",
+        "difficulty": 6,
+        "moves": 100
+    }
   },
   {
     "id": "bot_laserturret",
@@ -3177,7 +3216,12 @@
     "turns_per_charge": 0,
     "ammo": "NULL",
     "revert_to": "null",
-    "use_action": "TURRET_LASER"
+    "use_action": {
+        "type": "place_monster",
+        "monster_id": "mon_laserturret",
+        "difficulty": 6,
+        "moves": 100
+    }
   },
   {
     "id": "bot_rifleturret",
@@ -3199,7 +3243,12 @@
     "turns_per_charge": 0,
     "ammo": "NULL",
     "revert_to": "null",
-    "use_action": "TURRET_RIFLE"
+    "use_action": {
+        "type": "place_monster",
+        "monster_id": "mon_turret_rifle",
+        "difficulty": 6,
+        "moves": 100
+    }
   },
   {
     "id": "UPS_off",
@@ -4725,7 +4774,7 @@
     "turns_per_charge": 0,
     "ammo": "NULL",
     "revert_to": "null",
-    "use_action": "TENT"
+    "use_action": "PORTABLE_STRUCTURE"
   },
   {
     "id": "large_tent_kit",
@@ -4747,7 +4796,7 @@
     "turns_per_charge": 0,
     "ammo": "NULL",
     "revert_to": "null",
-    "use_action": "LARGE_TENT"
+    "use_action": "PORTABLE_STRUCTURE"
   },
   {
     "id": "torch",
@@ -5299,6 +5348,29 @@
   },
 
   {
+    "id": "survival_marker",
+    "type": "TOOL",
+    "symbol": ",",
+    "color": "dark_gray",
+    "name": "survival marker",
+    "description": "This is a sharpened piece of charcoal that is almost guaranteed to make your hands all covered in charcoal. Use it to write something down.",
+    "price": 1000,
+    "material": "plastic",
+    "weight": 113,
+    "volume": 0,
+    "bashing": 0,
+    "cutting": 0,
+    "to_hit": 0,
+    "max_charges": 100,
+    "initial_charges": 100,
+    "charges_per_use": 1,
+    "turns_per_charge": 0,
+    "ammo": "NULL",
+    "revert_to": "null",
+    "use_action": "SPRAY_CAN"
+  },
+
+  {
     "id": "rag",
     "type": "TOOL",
     "symbol": ",",
@@ -5696,7 +5768,7 @@
     "turns_per_charge": 0,
     "ammo": "NULL",
     "revert_to": "null",
-    "use_action": "SHELTER"
+    "use_action": "PORTABLE_STRUCTURE"
   },
 
   {
@@ -6138,7 +6210,8 @@
     "charges_per_use": 0,
     "turns_per_charge": 0,
     "ammo": "battery",
-    "revert_to": "null"
+    "revert_to": "null",
+    "qualities": [["DRILL", 3]]
   },
 
   {
@@ -6835,7 +6908,7 @@
     "description": "This is a lighter featuring a flip top cover and refuelable tank.  It is lit.",
     "price": 35000,
     "material": "aluminum",
-    "flags": ["FIRE", "LIGHT_4", "FLAMING"],
+    "flags": ["FIRE", "LIGHT_4", "FLAMING", "REFILLABLE_LIGHTER"],
     "weight": 20,
     "volume": 0,
     "bashing": 0,
@@ -6847,7 +6920,7 @@
     "turns_per_charge": 10,
     "ammo": "gasoline",
     "revert_to": "ref_lighter",
-    "use_action": "REF_LIT"
+    "use_action": "FIRESTARTER"
   },
 
   {
@@ -6959,7 +7032,7 @@
     "price": 100,
     "material": ["steel", "wood"],
     "weight": 15142,
-    "volume": 1001,
+    "volume": 40,
     "bashing": 0,
     "cutting": 0,
     "to_hit": -2,
@@ -7340,7 +7413,7 @@
     "name": "RM42 fighting knife",
     "name_plural": "RM42 fighting knives",
     "description": "This sturdy matte black Rivtech combat dagger features a long and slim double-edged blade with a spear-point and a distinctive slip-resistant grip.  Originally manufactured for the military, it was very popular in films and among collectors due to its fearsome appearance.",
-    "price": 600,
+    "price": 45000,
     "material": ["ceramic", "plastic"],
     "techniques": ["RAPID", "WBLOCK_1"],
     "weight": 188,
@@ -7714,7 +7787,7 @@
     "ammo": "tape",
     "revert_to": "null",
     "use_action": "MISC_REPAIR",
-    "qualities": [["CUT", 1], ["HAMMER", 2], ["SAW_M", 1], ["SAW_W", 2], ["WRENCH", 1],
+    "qualities": [["CUT", 1], ["HAMMER", 3], ["SAW_M", 1], ["SAW_W", 2], ["WRENCH", 1],
         ["SCREW", 1], ["HAMMER_FINE", 1], ["SAW_M_FINE", 1], ["WRENCH_FINE", 1], ["SCREW_FINE", 1],
         ["BUTCHER", 10]]
   },

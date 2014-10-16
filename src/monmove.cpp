@@ -50,7 +50,7 @@ bool monster::can_move_to(int x, int y) const
 
         // don't enter open pits ever unless tiny or can fly
         if (!(type->size == MS_TINY || has_flag(MF_FLIES)) &&
-            (g->m.ter(x, y) == t_pit || g->m.ter(x, y) == t_pit_spiked))
+            (g->m.ter(x, y) == t_pit || g->m.ter(x, y) == t_pit_spiked || g->m.ter(x, y) == t_pit_glass))
             return false;
 
         // don't enter lava ever
@@ -58,7 +58,7 @@ bool monster::can_move_to(int x, int y) const
             return false;
 
         // don't enter fire or electricity ever
-        field &local_field = g->m.field_at(x, y);
+        const field &local_field = g->m.field_at(x, y);
         if (local_field.findField(fd_fire) || local_field.findField(fd_electricity))
             return false;
     }
@@ -213,34 +213,6 @@ void monster::move()
         return;
     }
 
-    // First, use the special attack, if we can!
-    if (sp_timeout > 0) {
-        sp_timeout--;
-    }
-    //If this monster has the ability to heal in combat, do it now.
-    if (has_flag(MF_REGENERATES_50)) {
-        if (hp < type->hp) {
-            if (one_in(2)) {
-                add_msg(m_warning, _("The %s is visibly regenerating!"), name().c_str());
-            }
-            hp += 50;
-            if(hp > type->hp) {
-                hp = type->hp;
-            }
-        }
-    }
-    if (has_flag(MF_REGENERATES_10)) {
-        if (hp < type->hp) {
-            if (one_in(2)) {
-                add_msg(m_warning, _("The %s seems a little healthier."), name().c_str());
-            }
-            hp += 10;
-            if(hp > type->hp) {
-                hp = type->hp;
-            }
-        }
-    }
-
     //The monster can consume objects it stands on. Check if there are any.
     //If there are. Consume them.
     if (has_flag(MF_ABSORBS)) {
@@ -253,38 +225,19 @@ void monster::move()
             g->m.i_clear(posx(), posy());
         }
     }
-
-    //Monster will regen morale and aggression if it is on max HP
-    //It regens more morale and aggression if is currently fleeing.
-    if(has_flag(MF_REGENMORALE) && hp >= type->hp){
-        if(is_fleeing(g->u)){
-            morale = type->morale;
-            anger = type->agro;
+    
+    // First, use the special attack, if we can!
+    for (size_t i = 0; i < sp_timeout.size(); ++i) {
+        if (sp_timeout[i] > 0) {
+            sp_timeout[i]--;
         }
-        if(morale <= type->morale)
-            morale += 1;
-        if(anger <= type->agro)
-            anger += 1;
-        if(morale < 0)
-            morale += 5;
-        if(anger < 0)
-            anger += 5;
-    }
 
-    // If this critter dies in sunlight, check & assess damage.
-    if (g->is_in_sunlight(posx(), posy()) && has_flag(MF_SUNDEATH)) {
-        add_msg(_("The %s burns horribly in the sunlight!"), name().c_str());
-        hp -= 100;
-        if(hp < 0) {
-            hp = 0  ;
-        }
-    }
-
-    if( sp_timeout == 0 && (friendly == 0 || has_flag(MF_FRIENDLY_SPECIAL)) &&
-        !has_effect("pacified") ) {
-        mattack ma;
-        if(!is_hallucination()) {
-            (ma.*type->sp_attack)(this);
+        if( sp_timeout[i] == 0 && (friendly == 0 || has_flag(MF_FRIENDLY_SPECIAL)) &&
+            !has_effect("pacified") ) {
+            mattack ma;
+            if(!is_hallucination()) {
+                (ma.*type->sp_attack[i])(this, i);
+            }
         }
     }
     if (moves < 0) {

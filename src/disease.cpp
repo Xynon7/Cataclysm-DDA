@@ -18,7 +18,7 @@ enum dis_type_enum {
 // Weather
 // Temperature, the order is important (dependent on bodypart.h)
  DI_COLD,
- DI_FROSTBITE,
+ DI_FROSTBITE, DI_FROSTBITE_RECOVERY,
  DI_HOT,
  DI_BLISTERS,
 // Diseases
@@ -81,6 +81,7 @@ void game::init_diseases() {
     disease_type_lookup["null"] = DI_NULL;
     disease_type_lookup["cold"] = DI_COLD;
     disease_type_lookup["frostbite"] = DI_FROSTBITE;
+    disease_type_lookup["frostbite_recovery"] = DI_FROSTBITE_RECOVERY;
     disease_type_lookup["hot"] = DI_HOT;
     disease_type_lookup["blisters"] = DI_BLISTERS;
     disease_type_lookup["infection"] = DI_INFECTION;
@@ -191,7 +192,11 @@ bool dis_msg(dis_type type_string) {
         add_msg(m_warning, _("You feel lightheaded."));
         break;
     case DI_ADRENALINE:
-        add_msg(m_good, _("You feel a surge of adrenaline!"));
+        if (!g->u.has_trait("M_DEFENDER")) {
+            add_msg(m_good, _("You feel a surge of adrenaline!"));
+        } else {
+            add_msg(m_good, _("Mycal wrath fills our fibers, and we grow turgid."));
+        }
         break;
     case DI_JETINJECTOR:
         add_msg(_("You feel a rush as the chemicals flow through your body!"));
@@ -602,72 +607,23 @@ void dis_effect(player &p, disease &dis)
         case DI_FROSTBITE:
             switch(dis.bp) {
                 case bp_hand_l:
-                    switch(dis.intensity) {
-                        case 2:
-                            p.mod_dex_bonus(-2);
-                            p.add_miss_reason(_("You have trouble grasping with your numb fingers."), 2);
-                        case 1:
-                            if (one_in(2)) {
-                                if ((p.temp_cur[bp_hand_l] > BODYTEMP_COLD ||
-                                        p.temp_cur[bp_hand_r] > BODYTEMP_COLD) && p.pain < 40) {
-                                    p.mod_pain(1);
-                                }
-                                if (!sleeping && tempMsgTrigger) {
-                                    add_msg(m_bad, _("Your fingers itch."));
-                                }
-                            }
-                        default:
-                            break;
-                    }
-                    break;
                 case bp_hand_r:
                     switch(dis.intensity) {
                         case 2:
                             p.add_miss_reason(_("You have trouble grasping with your numb fingers."), 2);
                             p.mod_dex_bonus(-2);
-                        case 1:
-                            if (one_in(2)) {
-                                if ((p.temp_cur[bp_hand_l] > BODYTEMP_COLD ||
-                                        p.temp_cur[bp_hand_r] > BODYTEMP_COLD) && p.pain < 40) {
-                                    p.mod_pain(1);
-                                }
-                                if (!sleeping && tempMsgTrigger) {
-                                    add_msg(m_bad, _("Your fingers itch."));
-                                }
-                            }
                         default:
                             break;
                     }
                     break;
                 case bp_foot_l:
-                    switch(dis.intensity) {
-                        case 2:
-                            if ((p.temp_cur[bp_foot_l] > BODYTEMP_COLD ||
-                                  p.temp_cur[bp_foot_r] > BODYTEMP_COLD) && p.pain < 40 &&
-                                  one_in(2)) {
-                                p.mod_pain(1);
-                            }
-                            // Fall-through
-                        case 1:
-                            if (!sleeping && tempMsgTrigger && one_in(2)) {
-                                add_msg(m_bad, _("Your toes itch."));
-                            }
-                        default:
-                            break;
-                    }
-                    break;
                 case bp_foot_r:
                     switch(dis.intensity) {
                         case 2:
-                            if ((p.temp_cur[bp_foot_l] > BODYTEMP_COLD ||
-                                  p.temp_cur[bp_foot_r] > BODYTEMP_COLD) && p.pain < 40 &&
-                                  one_in(2)) {
-                                p.mod_pain(1);
-                            }
-                            // Fall-through
+                            // Speed is lowered.
                         case 1:
                             if (!sleeping && tempMsgTrigger && one_in(2)) {
-                                add_msg(m_bad, _("Your toes itch."));
+                                add_msg(m_bad, _("Your foot has gone numb."));
                             }
                         default:
                             break;
@@ -677,9 +633,6 @@ void dis_effect(player &p, disease &dis)
                     switch(dis.intensity) {
                         case 2:
                             p.mod_per_bonus(-2);
-                            if ((p.temp_cur[bp_mouth] > BODYTEMP_COLD && p.pain < 40)) {
-                                p.mod_pain(1);
-                            }
                         case 1:
                             p.mod_per_bonus(-1);
                             if (!sleeping && tempMsgTrigger) {
@@ -688,6 +641,33 @@ void dis_effect(player &p, disease &dis)
                         default:
                             break;
                     }
+                    break;
+                default: // Suppress compiler warnings [-Wswitch]
+                    break;
+            }
+            break;
+
+        case DI_FROSTBITE_RECOVERY:
+            switch(dis.bp) {
+                case bp_hand_l:
+                case bp_hand_r:
+                    if (!sleeping && tempMsgTrigger && one_in(2)) {
+                        add_msg(m_bad, _("Your fingers itch."));
+                    }
+                    if (p.pain < 40) p.mod_pain(1);
+                    break;
+                case bp_foot_l:
+                case bp_foot_r:
+                    if (!sleeping && tempMsgTrigger && one_in(2)) {
+                        add_msg(m_bad, _("Your toes itch."));
+                    }
+                    if (p.pain < 40) p.mod_pain(1);
+                    break;
+                case bp_mouth:
+                    if (!sleeping && tempMsgTrigger && one_in(2)) {
+                        add_msg(m_bad, _("Your face feels irritated."));
+                    }
+                    if (p.pain < 40) p.mod_pain(1);
                     break;
                 default: // Suppress compiler warnings [-Wswitch]
                     break;
@@ -1031,7 +1011,7 @@ void dis_effect(player &p, disease &dis)
 
         case DI_SPORES:
             // Equivalent to X in 150000 + health * 100
-            if (one_in(100) && x_in_y(dis.intensity, 150 + p.get_healthy() / 10)) {
+            if ((!g->u.has_trait("M_IMMUNE")) && (one_in(100) && x_in_y(dis.intensity, 150 + p.get_healthy() / 10)) ) {
                 p.add_disease("fungus", 3601, false, 1, 1, 0, -1);
                 g->u.add_memorial_log(pgettext("memorial_male", "Contracted a fungal infection."),
                                       pgettext("memorial_female", "Contracted a fungal infection."));
@@ -1179,7 +1159,7 @@ void dis_effect(player &p, disease &dis)
             break;
 
         case DI_DATURA:
-		    {
+        {
                 p.mod_per_bonus(-6);
                 p.mod_dex_bonus(-3);
                 if (p.has_disease("asthma")) {
@@ -1199,14 +1179,14 @@ void dis_effect(player &p, disease &dis)
                   p.add_disease("hallu", rng(200, 1000));
             } if (dis.duration > 6000 && one_in(128)) {
                   p.mod_pain(rng(-3, -24));
-				  if (dis.duration > 8000 && one_in(16)) {
+                  if (dis.duration > 8000 && one_in(16)) {
                       add_msg(m_bad, _("You're experiencing loss of basic motor skills and blurred vision.  Your mind recoils in horror, unable to communicate with your spinal column."));
                       add_msg(m_bad, _("You stagger and fall!"));
                       p.add_effect("downed",rng(1,4));
                       if (one_in(8) || will_vomit(p, 10)) {
                             p.vomit();
                        }
-			      }
+                  }
             } if (dis.duration > 7000 && p.focus_pool >= 1) {
                   p.focus_pool--;
             } if (dis.duration > 8000 && one_in(256)) {
@@ -1215,24 +1195,24 @@ void dis_effect(player &p, disease &dis)
             } if (dis.duration > 12000 && one_in(256)) {
                   add_msg(m_bad, _("There's some kind of big machine in the sky."));
                   p.add_disease("visuals", rng(80, 400));
-				  if (one_in(32)) {
+                  if (one_in(32)) {
                         add_msg(m_bad, _("It's some kind of electric snake, coming right at you!"));
                         p.mod_pain(rng(4, 40));
                         p.vomit();
-				  };
+                  }
             } if (dis.duration > 14000 && one_in(128)) {
                   add_msg(m_bad, _("Order us some golf shoes, otherwise we'll never get out of this place alive."));
                   p.add_disease("visuals", rng(400, 2000));
-				  if (one_in(8)) {
+                  if (one_in(8)) {
                   add_msg(m_bad, _("The possibility of physical and mental collapse is now very real."));
                     if (one_in(2) || will_vomit(p, 10)) {
                         add_msg(m_bad, _("No one should be asked to handle this trip."));
                         p.vomit();
                         p.mod_pain(rng(8, 40));
                     }
-				  };
+                  }
             }
-			}
+        }
             break;
 
         case DI_TOOK_XANAX:
@@ -1484,14 +1464,18 @@ void dis_effect(player &p, disease &dis)
 
         case DI_ADRENALINE:
             if (dis.duration > 150) {
-                // 5 minutes positive effects
+                // 5 minutes positive effects; 15 if Mycus Defender
                 p.mod_str_bonus(5);
                 p.mod_dex_bonus(3);
                 p.mod_int_bonus(-8);
                 p.mod_per_bonus(1);
             } else if (dis.duration == 150) {
                 // 15 minutes come-down
-                p.add_msg_if_player(m_bad, _("Your adrenaline rush wears off.  You feel AWFUL!"));
+                if (g->u.has_trait("M_DEFENDER")) {
+                    p.add_msg_if_player(m_bad, _("We require repose; our fibers are nearly spent..."));
+                } else {
+                    p.add_msg_if_player(m_bad, _("Your adrenaline rush wears off.  You feel AWFUL!"));
+                }
             } else {
                 p.mod_str_bonus(-2);
                 p.mod_dex_bonus(-1);
@@ -1673,7 +1657,11 @@ void dis_effect(player &p, disease &dis)
                 }
             }
             if (one_in(10000)) {
-                p.add_disease("fungus", 3601, false, 1, 1, 0, -1);
+                if (!g->u.has_trait("M_IMMUNE")) {
+                    p.add_disease("fungus", 3601, false, 1, 1, 0, -1);
+                } else {
+                    p.add_msg_if_player(m_info, _("We have many colonists awaiting passage."));
+                }
                 p.rem_disease("teleglow");
             }
             break;
@@ -1937,6 +1925,17 @@ std::string dis_name(disease& dis)
                 switch (dis.intensity) {
                 case 1: return _("Frostnip - face");
                 case 2: return _("Frostbite - face");}
+            default: // Suppress compiler warning [-Wswitch]
+                break; // function return "" in this case
+        }
+
+    case DI_FROSTBITE_RECOVERY:
+        switch(dis.bp) {
+            case bp_hand_l:
+            case bp_hand_r: return _("Defrosting - hand");
+            case bp_foot_l:
+            case bp_foot_r: return _("Defrosting - foot");
+            case bp_mouth:  return _("Defrosting - head");
             default: // Suppress compiler warning [-Wswitch]
                 break; // function return "" in this case
         }
@@ -2267,6 +2266,8 @@ std::string dis_combined_name(disease& dis)
             return _("Cold");
         case DI_FROSTBITE:
             return _("Frostbite");
+        case DI_FROSTBITE_RECOVERY:
+            return _("Defrosting");
         case DI_HOT:
             return _("Hot");
         default: // Suppress compiler warnings [-Wswitch]
@@ -2469,6 +2470,17 @@ Your right leg is frostbitten from prolonged exposure to the cold. It is extreme
             default: // Suppress compiler warning [-Wswitch]
                 break;
             }
+        }
+
+    case DI_FROSTBITE_RECOVERY:
+        switch (dis.bp) {
+            case bp_hand_l: return _("The blood is starting to flow in your left hand again, causing pain as you begin to feel the damage the cold has wrought to your hand.");
+            case bp_hand_r: return _("The blood is starting to flow in your right hand again, causing pain as you begin to feel the damage the cold has wrought to your hand.");
+            case bp_foot_l: return _("The blood is starting to flow in your left foot again, causing pain as you begin to feel the damage the cold has wrought to your foot.");
+            case bp_foot_r: return _("The blood is starting to flow in your right foot again, causing pain as you begin to feel the damage the cold has wrought to your foot.");
+            case bp_mouth:  return _("The blood is starting to flow in your face again, causing pain as you begin to feel the damage the cold has wrought to your face.");
+            default: // Suppress compiler warning [-Wswitch]
+                break;
         }
 
     case DI_HOT:
@@ -2833,6 +2845,11 @@ Your right foot is blistering from the intense heat. It is extremely painful.");
 
 void manage_fungal_infection(player& p, disease& dis)
 {
+    if (g->u.has_trait("M_IMMUNE")) { // Just in case
+        p.vomit();
+        p.rem_disease("fungus");
+        p.add_msg_if_player(m_bad,  _("We have mistakenly colonized a local guide!  Purging now."));
+    }
     int bonus = p.get_healthy() / 10 + (p.has_trait("POISRESIST") ? 100 : 0);
     p.moves -= 10;
     p.mod_str_bonus(-1);
@@ -3083,6 +3100,15 @@ void manage_sleep(player& p, disease& dis)
             if( !dream.empty() ) {
                 add_msg( "%s", dream.c_str() );
             }
+            // Mycus folks upgrade in their sleep.
+            if (p.has_trait("THRESH_MYCUS")) {
+                if (one_in(8)) {
+                    p.mutate_category("MUTCAT_MYCUS");
+                    p.hunger += 10;
+                    p.fatigue += 5;
+                    p.thirst += 10;
+                }
+            }
         }
     }
 
@@ -3181,6 +3207,7 @@ static void handle_bite_wound(player& p, disease& dis)
                 p.add_disease("recover", 2 * (3601 - dis.duration) - 4800);
             }
             p.rem_disease("bite", dis.bp);
+            return;
         }
     }
 
@@ -3229,6 +3256,7 @@ static void handle_infected_wound(player& p, disease& dis)
                 p.add_disease("recover", 4 * (14401 - dis.duration + 3600) - 4800);
             }
             p.rem_disease("infected", dis.bp);
+            return;
         }
     }
 

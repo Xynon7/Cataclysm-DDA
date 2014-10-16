@@ -342,18 +342,10 @@ void player::fire_gun(int tarx, int tary, bool burst)
     int ups_drain = 0;
     int adv_ups_drain = 0;
     int bio_power_drain = 0;
-    if (weapon.has_flag("USE_UPS")) {
-        ups_drain = 5;
-        adv_ups_drain = 3;
-        bio_power_drain = 1;
-    } else if (weapon.has_flag("USE_UPS_20")) {
-        ups_drain = 20;
-        adv_ups_drain = 12;
-        bio_power_drain = 4;
-    } else if (weapon.has_flag("USE_UPS_40")) {
-        ups_drain = 40;
-        adv_ups_drain = 24;
-        bio_power_drain = 8;
+    if( firing->ups_charges > 0 ) {
+        ups_drain = firing->ups_charges;
+        adv_ups_drain = std::min( 1, firing->ups_charges * 3 / 5 );
+        bio_power_drain = std::min( 1, firing->ups_charges / 5 );
     }
 
     // cap our maximum burst size by the amount of UPS power left
@@ -1169,13 +1161,22 @@ void make_gun_sound_effect(player &p, bool burst, item *weapon)
     std::string gunsound;
     // noise() doesn't suport gunmods, but it does return the right value
     int noise = p.weapon.noise();
-    if(weapon->is_gunmod()) { //TODO make this produce the correct sound
-        g->sound(p.posx, p.posy, noise, "Boom!");
-        return;
+    std::string ammo_used;
+    std::set<std::string> ammo_effects;
+    std::string weapon_id;
+    if( weapon->is_gunmod() ) {
+        it_gunmod *mod_type = dynamic_cast<it_gunmod *>(weapon->type);
+        ammo_used = mod_type->newtype;
+        // Leave ammo_effects empty for now.
+        weapon_id = mod_type->id;
+    } else {
+        it_gun *weapontype = dynamic_cast<it_gun *>(weapon->type);
+        ammo_used = weapontype->ammo;
+        ammo_effects = weapontype->ammo_effects;
+        weapon_id = weapontype->id;
     }
 
-    it_gun *weapontype = dynamic_cast<it_gun *>(weapon->type);
-    if (weapontype->ammo_effects.count("LASER") || weapontype->ammo_effects.count("PLASMA")) {
+    if( ammo_effects.count("LASER") || ammo_effects.count("PLASMA") ) {
         if (noise < 20) {
             gunsound = _("Fzzt!");
         } else if (noise < 40) {
@@ -1185,7 +1186,7 @@ void make_gun_sound_effect(player &p, bool burst, item *weapon)
         } else {
             gunsound = _("Kra-kow!!");
         }
-    } else if (weapontype->ammo_effects.count("LIGHTNING")) {
+    } else if( ammo_effects.count("LIGHTNING") ) {
         if (noise < 20) {
             gunsound = _("Bzzt!");
         } else if (noise < 40) {
@@ -1195,7 +1196,7 @@ void make_gun_sound_effect(player &p, bool burst, item *weapon)
         } else {
             gunsound = _("Kra-koom!!");
         }
-    } else if (weapontype->ammo_effects.count("WHIP")) {
+    } else if( ammo_effects.count("WHIP") ) {
         noise = 20;
         gunsound = _("Crack!");
     } else {
@@ -1226,18 +1227,15 @@ void make_gun_sound_effect(player &p, bool burst, item *weapon)
         }
     }
 
-    if (weapon->curammo->type == "40mm") {
+    if( ammo_used == "40mm") {
         g->sound(p.posx, p.posy, 8, _("Thunk!"));
-    } else if (weapon->type->id == "hk_g80") {
+    } else if( weapon_id == "hk_g80") {
         g->sound(p.posx, p.posy, 24, _("tz-CRACKck!"));
-    } else if (weapon->curammo->type == "gasoline" || weapon->curammo->type == "66mm" ||
-               weapon->curammo->type == "84x246mm" || weapon->curammo->type == "m235") {
+    } else if( ammo_used == "gasoline" || ammo_used == "66mm" ||
+               ammo_used == "84x246mm" || ammo_used == "m235" ) {
         g->sound(p.posx, p.posy, 4, _("Fwoosh!"));
-    } else if (weapon->curammo->type != "bolt" &&
-               weapon->curammo->type != "arrow" &&
-               weapon->curammo->type != "pebble" &&
-               weapon->curammo->type != "fishspear" &&
-               weapon->curammo->type != "dart") {
+    } else if( ammo_used != "bolt" && ammo_used != "arrow" && ammo_used != "pebble" &&
+               ammo_used != "fishspear" && ammo_used != "dart" ) {
         g->sound(p.posx, p.posy, noise, gunsound);
     }
 }

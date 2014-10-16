@@ -72,7 +72,7 @@ std::pair<int, int> rain_or_acid_level( const int wt )
         return std::make_pair(0, (wt == WEATHER_ACID_RAIN  ? 8 : 4 ));
     } else if (wt == WEATHER_DRIZZLE ) {
         return std::make_pair(4, 0);
-        // why isnt this in weather data. now we have multiple rain/turn scales =[
+        // why isn't this in weather data. now we have multiple rain/turn scales =[
     } else if ( wt ==  WEATHER_RAINY || wt == WEATHER_THUNDER || wt == WEATHER_LIGHTNING ) {
         return std::make_pair(8, 0);
         /// @todo bucket of melted snow?
@@ -261,7 +261,7 @@ void fill_water_collectors(int mmPerHour, bool acid)
 }
 
 /**
- * Weather-based degredation of fires and scentmap.
+ * Weather-based degradation of fires and scentmap.
  */
 void decay_fire_and_scent(int fire_amount)
 {
@@ -361,7 +361,7 @@ void weather_effect::very_wet()
 void weather_effect::thunder()
 {
     very_wet();
-    if (one_in(THUNDER_CHANCE)) {
+    if (!g->u.is_deaf() && one_in(THUNDER_CHANCE)) {
         if (g->levz >= 0) {
             add_msg(_("You hear a distant rumble of thunder."));
         } else if (g->u.has_trait("GOODHEARING") && one_in(1 - 2 * g->levz)) {
@@ -449,7 +449,6 @@ void weather_effect::acid()
     generic_very_wet(true);
 }
 
-
 // Script from wikipedia:
 // Current time
 // The current time is hour/minute Eastern Standard Time
@@ -494,7 +493,7 @@ std::string weather_forecast(radio_tower tower)
     //weather_report << "The wind was <direction> at ? mi/km an hour.  ";
     //weather_report << "The pressure was ??? in/mm and steady/rising/falling.";
 
-    // Regional conditions (simulated by chosing a random range containing the current conditions).
+    // Regional conditions (simulated by choosing a random range containing the current conditions).
     // Adjusted for weather volatility based on how many weather changes are coming up.
     //weather_report << "Across <region>, skies ranged from <cloudiest> to <clearest>.  ";
     // TODO: Add fake reports for nearby cities
@@ -557,6 +556,52 @@ std::string print_temperature(float fahrenheit, int decimals)
         return rmp_format(_("<Fahrenheit>%sF"), ret.str().c_str());
     }
 
+}
+
+int get_local_windchill(double temperature, double humidity, double windpower, std::string omtername, bool sheltered)
+{
+    /**
+    *  A player is sheltered if he is underground, in a car, or indoors.
+    **/
+
+    int tmpwind = windpower;
+    tmpwind = (float)(tmpwind*0.44704); // Convert to meters per second.
+    int Ctemperature = (temperature - 32) * 5/9; // Convert to celsius.
+
+    // Over map terrain may modify the effect of wind.
+    if (sheltered)
+        tmpwind  = 0.0;
+    else if ( omtername == "forest_water")
+        tmpwind *= 0.7;
+    else if ( omtername == "forest" )
+        tmpwind *= 0.5;
+    else if ( omtername == "forest_thick" || omtername == "hive")
+        tmpwind *= 0.4;
+
+
+
+    /// Source : http://en.wikipedia.org/wiki/Wind_chill#Australian_Apparent_Temperature
+    int windchill = (0.33 * ((humidity / 100.00) * 6.105 * exp((17.27 * Ctemperature)/(237.70 + Ctemperature))) - 0.70*tmpwind - 4.00);
+
+    windchill = windchill * 9/5; // Convert to Fahrenheit, but omit the '+ 32' because we are only dealing with a piece of the felt air temperature equation.
+
+    return windchill;
+
+}
+
+int get_local_humidity(double humidity, weather_type weather, bool sheltered)
+{
+    int tmphumidity = humidity;
+    if (sheltered)
+    {
+        tmphumidity = humidity * (100 - humidity) / 100 + humidity; // norm for a house?
+    }
+    else if (weather == WEATHER_RAINY || weather == WEATHER_DRIZZLE || weather == WEATHER_THUNDER || weather == WEATHER_LIGHTNING)
+    {
+        tmphumidity = 100;
+    }
+
+    return tmphumidity;
 }
 
 ///@}

@@ -29,7 +29,6 @@ monster::monster()
  wandf = 0;
  hp = 60;
  moves = 0;
- sp_timeout = 0;
  def_chance = 0;
  friendly = 0;
  anger = 0;
@@ -42,7 +41,6 @@ monster::monster()
  unique_name = "";
  hallucination = false;
  ignoring = 0;
- ammo = 100;
 }
 
 monster::monster(mtype *t)
@@ -56,7 +54,9 @@ monster::monster(mtype *t)
  moves = type->speed;
  Creature::set_speed_base(type->speed);
  hp = type->hp;
- sp_timeout = rng(0, type->sp_freq);
+ for (size_t i = 0; i < type->sp_freq.size(); ++i) {
+    sp_timeout.push_back(rng(0, type->sp_freq[i]));
+ }
  def_chance = type->def_chance;
  friendly = 0;
  anger = t->agro;
@@ -69,7 +69,7 @@ monster::monster(mtype *t)
  unique_name = "";
  hallucination = false;
  ignoring = 0;
- ammo = 100;
+ ammo = t->starting_ammo;
 }
 
 monster::monster(mtype *t, int x, int y)
@@ -83,7 +83,9 @@ monster::monster(mtype *t, int x, int y)
  moves = type->speed;
  Creature::set_speed_base(type->speed);
  hp = type->hp;
- sp_timeout = type->sp_freq;
+ for (size_t i = 0; i < type->sp_freq.size(); ++i) {
+    sp_timeout.push_back(type->sp_freq[i]);
+ }
  def_chance = type->def_chance;
  friendly = 0;
  anger = type->agro;
@@ -96,7 +98,7 @@ monster::monster(mtype *t, int x, int y)
  unique_name = "";
  hallucination = false;
  ignoring = 0;
- ammo = 100;
+ ammo = t->starting_ammo;
 }
 
 monster::~monster()
@@ -133,7 +135,10 @@ void monster::poly(mtype *t)
  anger = type->agro;
  morale = type->morale;
  hp = int(hp_percentage * type->hp);
- sp_timeout = type->sp_freq;
+ sp_timeout.clear();
+ for (size_t i = 0; i < type->sp_freq.size(); ++i) {
+    sp_timeout.push_back(type->sp_freq[i]);
+ }
  def_chance = type->def_chance;
 }
 
@@ -922,7 +927,7 @@ int monster::hit_roll() const {
             return 0;
         }
     }
-    
+
     return dice(type->melee_skill, 10);
 }
 
@@ -990,6 +995,54 @@ int monster::fall_damage() const
  }
 
  return 0;
+}
+
+void monster::reset_special(int index)
+{
+    if (index < 0) {
+        return;
+    }
+
+    sp_timeout[index] = type->sp_freq[index];
+}
+
+void monster::reset_special_rng(int index)
+{
+    if (index < 0) {
+        return;
+    }
+
+    sp_timeout[index] = rng(0, type->sp_freq[index]);
+}
+
+void monster::set_special(int index, int time)
+{
+    if (index < 0) {
+        return;
+    }
+
+    if (time < 0) {
+        time = 0;
+    }
+    sp_timeout[index] = time;
+}
+
+void monster::normalize_ammo( const int old_ammo )
+{
+    int total_ammo = 0;
+    // Sum up the ammo entries to get a ratio.
+    for( const auto &ammo_entry : type->starting_ammo ) {
+        total_ammo += ammo_entry.second;
+    }
+    if( total_ammo == 0 ) {
+        // Should never happen, but protect us from a div/0 if it does.
+        return;
+    }
+    // Previous code gave robots 100 rounds of ammo.
+    // This reassigns whatever is left from that in the appropriate proportions.
+    for( const auto &ammo_entry : type->starting_ammo ) {
+        ammo[ammo_entry.first] = (old_ammo * ammo_entry.second) / (100 * total_ammo);
+    }
 }
 
 void monster::explode()
@@ -1204,6 +1257,62 @@ void monster::process_effects()
         }
     }
 
+    //If this monster has the ability to heal in combat, do it now.
+    if( has_flag( MF_REGENERATES_50 ) ) {
+        if( hp < type->hp ) {
+            if( one_in( 2 ) && g->u.sees( this ) ) {
+                add_msg( m_warning, _( "The %s is visibly regenerating!" ), name().c_str() );
+            }
+            hp += 50;
+            if( hp > type->hp ) {
+                hp = type->hp;
+            }
+        }
+    }
+    if( has_flag( MF_REGENERATES_10 ) ) {
+        if( hp < type->hp ) {
+            if( one_in( 2 ) && g->u.sees( this ) ) {
+                add_msg( m_warning, _( "The %s seems a little healthier." ), name().c_str() );
+            }
+            hp += 10;
+            if( hp > type->hp ) {
+                hp = type->hp;
+            }
+        }
+    }
+
+    //Monster will regen morale and aggression if it is on max HP
+    //It regens more morale and aggression if is currently fleeing.
+    if( has_flag( MF_REGENMORALE ) && hp >= type->hp ) {
+        if( is_fleeing( g->u ) ) {
+            morale = type->morale;
+            anger = type->agro;
+        }
+        if( morale <= type->morale ) {
+            morale += 1;
+        }
+        if( anger <= type->agro ) {
+            anger += 1;
+        }
+        if( morale < 0 ) {
+            morale += 5;
+        }
+        if( anger < 0 ) {
+            anger += 5;
+        }
+    }
+
+    // If this critter dies in sunlight, check & assess damage.
+    if( has_flag( MF_SUNDEATH ) && g->is_in_sunlight( posx(), posy() ) ) {
+        if( g->u.sees( this ) ) {
+            add_msg( m_good, _( "The %s burns horribly in the sunlight!" ), name().c_str() );
+        }
+        hp -= 100;
+        if( hp < 0 ) {
+            hp = 0;
+        }
+    }
+
     Creature::process_effects();
 }
 
@@ -1222,9 +1331,15 @@ bool monster::make_fungus()
       tid == "mon_zombie_hulk" || tid == "mon_zombie_soldier" || tid == "mon_zombie_tough" ||
       tid == "mon_zombie_scientist" || tid == "mon_zombie_hunter" || tid == "mon_zombie_child"||
       tid == "mon_zombie_bio_op" || tid == "mon_zombie_survivor" || tid == "mon_zombie_fireman" ||
-      tid == "mon_zombie_cop" || tid == "mon_zombie_fat") {
-        polypick = 2;
-    } else if (tid == "mon_boomer" || tid == "mon_zombie_gasbag") {
+      tid == "mon_zombie_cop" || tid == "mon_zombie_fat" || tid == "mon_zombie_rot" ||
+      tid == "mon_zombie_swimmer" || tid == "mon_zombie_grabber" || tid == "mon_zombie_technician" ||
+      tid == "mon_zombie_brute_shocker") {
+        polypick = 2; // Necro and Master have enough Goo to resist conversion.
+        // Firefighter, hazmat, and scarred/beekeeper have the PPG on.
+    } else if (tid == "mon_zombie_necro" || tid == "mon_zombie_master" || tid == "mon_zombie_firefighter" ||
+      tid == "mon_zombie_hazmat" || tid == "mon_beekeeper") {
+        return true;
+    } else if (tid == "mon_boomer" || tid == "mon_zombie_gasbag" || tid == "mon_zombie_smoker") {
         polypick = 3;
     } else if (tid == "mon_triffid" || tid == "mon_triffid_young" || tid == "mon_triffid_queen") {
         polypick = 4;
@@ -1353,4 +1468,16 @@ void monster::add_msg_player_or_npc(game_message_type type, const char *, const 
 bool monster::is_dead() const
 {
     return dead || is_dead_state();
+}
+
+item monster::to_item() const
+{
+    if( type->revert_to_itype.empty() ) {
+        return item();
+    }
+    // Birthday is wrong, but the item created here does not use it anyway (I hope).
+    item result( type->revert_to_itype, calendar::turn );
+    const int damfac = std::max( 1, 5 * hp / type->hp ); // 1 ... 5 (or more for some monsters with hp > type->hp)
+    result.damage = std::max( 0, 5 - damfac ); // 4 ... 0
+    return result;
 }

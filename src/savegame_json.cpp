@@ -325,7 +325,7 @@ void player::serialize(JsonOut &json) const
         json.member( "profession", prof->ident() );
     }
     if ( g->scen != NULL ) {
-	json.member( "scenario", g->scen->ident() );
+        json.member( "scenario", g->scen->ident() );
     }
     // someday, npcs may drive
     json.member( "driving_recoil", int(driving_recoil) );
@@ -344,7 +344,7 @@ void player::serialize(JsonOut &json) const
 
     // crafting etc
     json.member( "activity", activity );
-    json.member( "backlog", activity );
+    json.member( "backlog", backlog );
 
     // mutations; just like traits but can be removed.
     json.member( "mutations", my_mutations );
@@ -452,8 +452,11 @@ void player::deserialize(JsonIn &jsin)
         start_location = g->scen->start_location();
     } else {
         scenario *generic_scenario = scenario::generic();
-        debugmsg("Tried to use non-existent scenario '%s'. Setting to generic '%s'.",
-                    scen_ident.c_str(), generic_scenario->ident().c_str());
+        // Only display error message if from a game file after scenarios existed.
+        if (savegame_loading_version > 20) {
+            debugmsg("Tried to use non-existent scenario '%s'. Setting to generic '%s'.",
+                        scen_ident.c_str(), generic_scenario->ident().c_str());
+        }
         g->scen = generic_scenario;
     }
     temp_cur.fill( 5000 );
@@ -465,7 +468,7 @@ void player::deserialize(JsonIn &jsin)
 
     frostbite_timer.fill( 0 );
     data.read( "frostbite_timer", frostbite_timer );
-    
+
     body_wetness.fill( 0 );
     data.read( "body_wetness", body_wetness );
 
@@ -475,7 +478,7 @@ void player::deserialize(JsonIn &jsin)
         learned_recipes.clear();
         while ( parray.has_more() ) {
             if ( parray.read_next(pstr) ) {
-                learned_recipes[ pstr ] = recipe_by_name( pstr );
+                learned_recipes[ pstr ] = (recipe *)recipe_by_name( pstr );
             }
         }
     }
@@ -862,7 +865,22 @@ void monster::load(JsonObject &data)
     data.read("wandy", wandy);
     data.read("wandf", wandf);
     data.read("hp", hp);
-    data.read("sp_timeout", sp_timeout);
+
+    if (data.has_array("sp_timeout")) {
+        JsonArray parray = data.get_array("sp_timeout");
+        if ( !parray.empty() ) {
+            int ptimeout = 0;
+            while ( parray.has_more() ) {
+                if ( parray.read_next(ptimeout) ) {
+                    sp_timeout.push_back(ptimeout);
+                }
+            }
+        }
+    }
+    for (size_t i = sp_timeout.size(); i < type->sp_freq.size(); ++i) {
+        sp_timeout.push_back(rng(0, type->sp_freq[i]));
+    }
+
     data.read("friendly", friendly);
     data.read("faction_id", faction_id);
     data.read("mission_id", mission_id);
@@ -876,8 +894,11 @@ void monster::load(JsonObject &data)
     data.read("plans", plans);
 
     data.read("inv", inv);
-    if (!data.read("ammo", ammo)) {
-        ammo = 100;
+    if( data.has_int("ammo") && !type->starting_ammo.empty() ) {
+        // Legacy loading for ammo.
+        normalize_ammo( data.get_int("ammo") );
+    } else {
+        data.read("ammo", ammo);
     }
 }
 
@@ -991,6 +1012,11 @@ void item::deserialize(JsonObject &data)
     data.read( "fridge", fridge );
     data.read( "rot", rot );
     data.read( "last_rot_check", last_rot_check );
+    if( !active && !rotten() && goes_bad() ) {
+        // Rotting found *must* be active to trigger the rotting process,
+        // if it's already rotten, no need to do this.
+        active = true;
+    }
 
     data.read( "curammo", ammotmp );
     if ( ammotmp != "null" ) {
@@ -1203,9 +1229,13 @@ void vehicle_part::deserialize(JsonIn &jsin)
     data.read("amount", amount );
     data.read("blood", blood );
     data.read("bigness", bigness );
-    data.read( "flags", flags );
-    data.read( "passenger_id", passenger_id );
+    data.read("flags", flags );
+    data.read("passenger_id", passenger_id );
     data.read("items", items);
+    data.read("target_first_x", target.first.x);
+    data.read("target_first_y", target.first.y);
+    data.read("target_second_x", target.second.x);
+    data.read("target_second_y", target.second.y);
 }
 
 void vehicle_part::serialize(JsonOut &json) const
@@ -1221,6 +1251,10 @@ void vehicle_part::serialize(JsonOut &json) const
     json.member("flags", flags);
     json.member("passenger_id", passenger_id);
     json.member("items", items);
+    json.member("target_first_x", target.first.x);
+    json.member("target_first_y", target.first.y);
+    json.member("target_second_x", target.second.x);
+    json.member("target_second_y", target.second.y);
     json.end_object();
 }
 

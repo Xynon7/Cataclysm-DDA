@@ -42,7 +42,6 @@ bool mapbuffer::add_submap(const tripoint &p, submap *sm)
         return false;
     }
 
-    sm->turn_last_touched = int(calendar::turn);
     submaps[p] = sm;
 
     return true;
@@ -295,31 +294,13 @@ void mapbuffer::save_quad( const std::string &filename, const tripoint &om_addr,
                     jsout.write( i );
                     jsout.write( j );
                     jsout.start_array();
-                    for( auto it = sm->fld[i][j].getFieldStart();
-                         it != sm->fld[i][j].getFieldEnd(); ++it ) {
-                        if(it->second != NULL) {
+                    for( auto &fld : sm->fld[i][j] ) {
+                        const field_entry &cur = fld.second;
                             // We don't seem to have a string identifier for fields anywhere.
-                            jsout.write( it->second->getFieldType() );
-                            jsout.write( it->second->getFieldDensity() );
-                            jsout.write( it->second->getFieldAge() );
-                        }
+                            jsout.write( cur.getFieldType() );
+                            jsout.write( cur.getFieldDensity() );
+                            jsout.write( cur.getFieldAge() );
                     }
-                    jsout.end_array();
-                }
-            }
-        }
-        jsout.end_array();
-
-        jsout.member( "graffiti" );
-        jsout.start_array();
-        for(int j = 0; j < SEEY; j++) {
-            for(int i = 0; i < SEEX; i++) {
-                // Save graffiti
-                if (sm->get_graffiti(i, j).contents) {
-                    jsout.start_array();
-                    jsout.write( i );
-                    jsout.write( j );
-                    jsout.write( *sm->get_graffiti(i, j).contents );
                     jsout.end_array();
                 }
             }
@@ -542,7 +523,7 @@ submap *mapbuffer::unserialize_submaps( const tripoint &p )
                     jsin.start_array();
                     int i = jsin.get_int();
                     int j = jsin.get_int();
-                    sm->set_graffiti(i, j, graffiti( jsin.get_string() ));
+                    sm->set_graffiti( i, j, jsin.get_string() );
                     jsin.end_array();
                 }
             } else if(submap_member_name == "cosmetics") {

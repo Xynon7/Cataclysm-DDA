@@ -213,14 +213,69 @@ public:
  int has_gunmod(itype_id type);
  item* active_gunmod();
  item const* inspect_active_gunmod() const;
- bool goes_bad();
+ bool goes_bad() const;
+ bool is_going_bad() const;
  bool count_by_charges() const;
  long max_charges() const;
  bool craft_has_charges();
  long num_charges();
- bool rotten();
- bool is_rotten;
- void calc_rot(const point &);
+
+    /**
+     * Reduce the charges of this item, only use for items counted by charges!
+     * The item must have enough charges for this (>= quantity) and be counted
+     * by charges.
+     * @param quantity How many charges should be removed.
+     * @return true if all charges would have been removed and the must be destroyed.
+     * The charges member is not changed in that case (for usage in `player::i_rem`
+     * which returns the removed item).
+     * False if there are charges remaining, the charges have been reduced in that case.
+     */
+    bool reduce_charges( long quantity );
+    /**
+     * Returns true if the item is considered rotten.
+     */
+    bool rotten() const;
+    /**
+     * Accumulate rot of the item since last rot calculation.
+     * This function works for non-rotting stuff, too - it increases the value
+     * of rot.
+     * @param p The location of the item to check for temperature.
+     */
+    void calc_rot(const point &p);
+    /**
+     * Returns whether the item has completely rotten away.
+     */
+    bool has_rotten_away() const;
+    /**
+     * Get @ref rot value relative to it_comest::spoils, if the item does not spoil,
+     * it returns 0. If the item is rotten the returned value is > 1.
+     */
+    float get_relative_rot();
+    /**
+     * Set the @ref rot to the given relative rot (relative to it_comest::spoils).
+     */
+    void set_relative_rot(float rel_rot);
+private:
+    /**
+     * Accumulated rot of the item. This is compared to it_comest::spoils
+     * to decide weather the item is rotten or not.
+     */
+    int rot;
+    /**
+     * The turn when the rot calculation has been done the last time.
+     */
+    int last_rot_check;
+public:
+    int get_rot() const
+    {
+        return rot;
+    }
+    /**
+     * The turn when this item has been put into a fridge.
+     * 0 if this item is not in a fridge.
+     */
+    int fridge;
+
  int brewing_time();
  bool ready_to_revive(); // used for corpses
  void detonate(point p) const;
@@ -280,9 +335,15 @@ protected:
     bool process_artifact(player *carrier, point pos);
     bool process_wet(player *carrier, point pos);
     bool process_litcig(player *carrier, point pos);
+    bool process_cable(player *carrier, point pos);
     bool process_tool(player *carrier, point pos);
     bool process_charger_gun(player *carrier, point pos);
 public:
+    /**
+     * Helper to bring a cable back to its initial state.
+     */
+    void reset_cable(player* carrier);
+
     /**
      * Whether the item should be processed (by calling @ref process) each turn.
      * This is only a hint, used by the map to avoid coping the item when it
@@ -348,15 +409,34 @@ public:
 
  std::vector<item> contents;
 
+        /**
+         * Recursively check the contents of this item and remove those items
+         * that match the filter. Note that this function does *not* match
+         * the filter against *this* item, only against the contents.
+         * @return The removed items, the list may be empty if no items matches.
+         */
+        template<typename T>
+        std::list<item> remove_items_with( T filter )
+        {
+            std::list<item> result;
+            for( auto it = contents.begin(); it != contents.end(); ) {
+                if( filter( *it ) ) {
+                    result.push_back( std::move( *it ) );
+                    it = contents.erase( it );
+                } else {
+                    result.splice( result.begin(), it->remove_items_with( filter ) );
+                    ++it;
+                }
+            }
+            return result;
+        }
+
 private:
  std::string name;
 public:
  char invlet;             // Inventory letter
  long charges;
  bool active;             // If true, it has active effects to be processed
- int fridge;              // The turn we entered a fridge.
- int rot;                 // decay; same as turn-bday at 65 degrees, but doubles/halves every 18 degrees. can be negative (start game fridges)
- int last_rot_check;      // last turn we calculated rot
  signed char damage;      // How much damage it's sustained; generally, max is 5
  int burnt;               // How badly we're burnt
  std::bitset<13> covers;  // What body parts it covers

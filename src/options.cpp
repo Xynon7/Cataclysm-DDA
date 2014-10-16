@@ -29,7 +29,7 @@ extern cata_tiles *tilecontext;
 
 std::unordered_map<std::string, cOpt> OPTIONS;
 std::unordered_map<std::string, cOpt> ACTIVE_WORLD_OPTIONS;
-options_data optionsdata; // store extranious options data that doesn't need to be in OPTIONS,
+options_data optionsdata; // store extraneous options data that doesn't need to be in OPTIONS,
 std::vector<std::pair<std::string, std::string> > vPages;
 std::map<int, std::vector<std::string> > mPageItems;
 std::map<std::string, int> mOptionsSort;
@@ -565,6 +565,7 @@ void initOptions()
     optionNames["fr_FR"] =  "Français (France)";
     optionNames["de_DE"] = "Deutsch (Deutschland)";
     optionNames["it"] = "Italiano";
+    optionNames["es_AR"] = "Español (Argentina)";
     optionNames["es_ES"] = "Español (España)";
     optionNames["ja"] = "日本語";
     optionNames["ko"] = "한국어";
@@ -577,7 +578,7 @@ void initOptions()
     optionNames["zh_CN"] = "中文(天朝)";
     optionNames["zh_TW"] = "中文(台灣)";
     OPTIONS["USE_LANG"] = cOpt("interface", _("Language"), _("Switch Language. Requires restart."),
-                               ",cs,en,fi,fr_FR,de_DE,it,es_ES,ja,ko,pl,pt_BR,pt_PT,ru,sr,vi,zh_CN,zh_TW",
+                               ",cs,en,fi,fr_FR,de_DE,it,es_AR, es_ES,ja,ko,pl,pt_BR,pt_PT,ru,sr,vi,zh_CN,zh_TW",
                                ""
                               );
 

@@ -212,7 +212,7 @@ public:
     }
     virtual int maximum_charges() const
     {
-	return 1;
+        return 1;
     }
 
     bool has_use() const;
@@ -253,7 +253,12 @@ public:
 struct it_comest : public virtual itype {
     signed int quench;     // Many things make you thirstier!
     unsigned int nutr;     // Nutrition imparted
-    unsigned int spoils;   // How long it takes to spoil (hours / 600 turns)
+    /**
+     * How long it takes to spoil (turns), rotten food is handled differently
+     * (chance of bad thinks happen when eating etc).
+     * If 0, the food never spoils.
+     */
+    int spoils;
     unsigned int addict;   // Addictiveness potential
     long charges;  // Defaults # of charges (drugs, loaf of bread? etc)
     std::vector<long> rand_charges;
@@ -376,6 +381,10 @@ struct it_gun : public virtual itype {
 
     std::set<std::string> ammo_effects;
     std::map<std::string, int> valid_mod_locations;
+    /**
+     * If this uses UPS charges, how many (per shoot), 0 for no UPS charges at all.
+     */
+    int ups_charges;
 
     virtual bool is_gun() const
     {
@@ -388,13 +397,23 @@ struct it_gun : public virtual itype {
 
     it_gun() : itype(), skill_used(NULL), dmg_bonus(0), pierce(0), range(0), dispersion(0),
         recoil(0), durability(0), burst(0), clip(0), reload_time(0), ammo_effects(),
-        valid_mod_locations()
+        valid_mod_locations(), ups_charges(0)
     {
     }
 };
 
 struct it_gunmod : public virtual itype {
-    signed int dispersion, damage, loudness, clip, recoil, burst;
+    // Used by gunmods with a firing mode,
+    // this should be supported by assigning a gun itype to the item as well.
+    int dispersion;
+    int damage;
+    int loudness;
+    int clip;
+    int recoil;
+    int burst;
+    int range;
+    Skill *skill_used;
+    // Rest of the attributes are properly part of a gunmod.
     ammotype newtype;
     std::set<std::string> acceptible_ammo_types;
     bool used_on_pistol;
@@ -404,20 +423,16 @@ struct it_gunmod : public virtual itype {
     bool used_on_bow;
     bool used_on_crossbow;
     bool used_on_launcher;
-    Skill *skill_used;
     std::string location;
 
-    virtual bool is_gunmod() const
-    {
+    virtual bool is_gunmod() const {
         return true;
     }
 
     it_gunmod() : itype(), dispersion(0), damage(0), loudness(0), clip(0), recoil(0), burst(0),
-        newtype(), acceptible_ammo_types(), used_on_pistol(false), used_on_shotgun(false),
-        used_on_smg(false), used_on_rifle(false), used_on_bow(false), used_on_crossbow(false),
-        used_on_launcher(false), skill_used(NULL), location()
-    {
-    }
+        range(0), skill_used(NULL), newtype(), acceptible_ammo_types(), used_on_pistol(false),
+        used_on_shotgun(false), used_on_smg(false), used_on_rifle(false), used_on_bow(false),
+        used_on_crossbow(false), used_on_launcher(false), location() {}
 };
 
 struct it_armor : public virtual itype {
@@ -479,7 +494,7 @@ struct it_book : public virtual itype {
     unsigned int time;  // How long, in 10-turns (aka minutes), it takes to read
     // "To read" means getting 1 skill point, not all of em
     int chapters; //Fun books have chapters; after all are read, the book is less fun
-    std::map<recipe *, int> recipes; //what recipes can be learned from this book
+    std::map<const recipe *, int> recipes; //what recipes can be learned from this book
     virtual bool is_book() const
     {
         return true;
@@ -537,7 +552,7 @@ struct it_tool : public virtual itype {
     }
     int maximum_charges() const
     {
-	return max_charges;
+        return max_charges;
     }
     it_tool() : itype(), ammo(), max_charges(0), def_charges(0), rand_charges(), charges_per_use(0),
         turns_per_charge(0), revert_to(), subtype()
@@ -564,7 +579,7 @@ struct it_tool_armor : public virtual it_tool, public virtual it_armor {
     }
     virtual int maximum_charges() const
     {
-	return it_tool::maximum_charges();
+        return it_tool::maximum_charges();
     }
     virtual std::string get_item_type_string() const
     {

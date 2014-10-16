@@ -19,7 +19,6 @@
 #include "monster.h"
 #include "npc.h"
 #include "vehicle.h"
-#include "graffiti.h"
 #include "lightmap.h"
 #include "coordinates.h"
 //TODO: include comments about how these variables work. Where are they used. Are they constant etc.
@@ -161,7 +160,14 @@ class map
      * Note: the map must have been loaded before this can be called.
      */
     void shift(const int sx, const int sy);
- void spawn_monsters();
+    /**
+     * Spawn monsters from submap spawn points and from the overmap.
+     * @param ignore_sight If true, monsters may spawn in the view of the player
+     * character (useful when the whole map has been loaded instead, e.g.
+     * when starting a new game, or after teleportation or after moving vertically).
+     * If false, monsters are not spawned in view of of player character.
+     */
+    void spawn_monsters(bool ignore_sight);
  void clear_spawns();
  void clear_traps();
 
@@ -276,6 +282,13 @@ class map
   */
  vehicle* veh_at(const int x, const int y);// checks, if tile is occupied by vehicle
 
+ /**
+  * Vehicle-relative coordinates from reality bubble coordinates, if a vehicle
+  * actually exists here.
+  * Returns 0,0 if no vehicle exists there (use veh_at to check if it exists first)
+  */
+ point veh_part_coordinates(const int x, const int y);
+
  // put player on vehicle at x,y
  void board_vehicle(int x, int y, player *p);
  void unboard_vehicle(const int x, const int y);//remove player from vehicle at x,y
@@ -314,8 +327,9 @@ class map
 // Terrain
  ter_id ter(const int x, const int y) const; // Terrain integer id at coord (x, y); {x|y}=(0, SEE{X|Y}*3]
  std::string get_ter(const int x, const int y) const; // Terrain string id at coord (x, y); {x|y}=(0, SEE{X|Y}*3]
- std::string get_ter_harvestable(const int x, const int y) const; //harvestable of the terrain
- int get_ter_harvest_season(const int x, const int y) const; //get season to harvest the terrain 
+ std::string get_ter_harvestable(const int x, const int y) const; // harvestable of the terrain
+ ter_id get_ter_transforms_into(const int x, const int y) const; // get the terrain id to transform to
+ int get_ter_harvest_season(const int x, const int y) const; // get season to harvest the terrain
  ter_t & ter_at(const int x, const int y) const; // Terrain at coord (x, y); {x|y}=(0, SEE{X|Y}*3]
 
  void ter_set(const int x, const int y, const ter_id new_terrain);
@@ -501,18 +515,67 @@ void add_corpse(int x, int y);
  const std::set<point> &trap_locations(trap_id t) const;
 
 // Fields
- field& field_at(const int x, const int y);
-
- int get_field_age(const point p, const field_id t);
- int get_field_strength(const point p, const field_id t);
- int adjust_field_age(const point p, const field_id t, const int offset);
- int adjust_field_strength(const point p, const field_id t, const int offset);
- int set_field_age(const point p, const field_id t, const int age, bool isoffset = false);
- int set_field_strength(const point p, const field_id t, const int str, bool isoffset = false);
- field_entry * get_field( const point p, const field_id t );
- bool add_field(const point p, const field_id t, const int density, const int age);
- bool add_field(const int x, const int y, const field_id t, const int density);
- void remove_field(const int x, const int y, const field_id field_to_remove);
+        /**
+         * Get the fields that are here. This is for querying and looking at it only,
+         * one can not change the fields.
+         * @param x,y The local map coordinates, if out of bounds, returns an empty field.
+         */
+        const field& field_at( const int x, const int y ) const;
+        /**
+         * Get the age of a field entry (@ref field_entry::age), if there is no
+         * field of that type, returns -1.
+         */
+        int get_field_age( const point p, const field_id t );
+        /**
+         * Get the density of a field entry (@ref field_entry::density),
+         * if there is no field of that type, returns 0.
+         */
+        int get_field_strength( const point p, const field_id t );
+        /**
+         * Increment/decrement age of field entry at point.
+         * @return resulting age or -1 if not present (does *not* create a new field).
+         */
+        int adjust_field_age( const point p, const field_id t, const int offset );
+        /**
+         * Increment/decrement density of field entry at point, creating if not present,
+         * removing if density becomes 0.
+         * @return resulting density, or 0 for not present (either removed or not created at all).
+         */
+        int adjust_field_strength( const point p, const field_id t, const int offset );
+        /**
+         * Set age of field entry at point.
+         * @return resulting age or -1 if not present (does *not* create a new field).
+         * @param isoffset If true, the given age value is added to the existing value,
+         * if false, the existing age is ignored and overridden.
+         */
+        int set_field_age( const point p, const field_id t, const int age, bool isoffset = false );
+        /**
+         * Set density of field entry at point, creating if not present,
+         * removing if density becomes 0.
+         * @return resulting density, or 0 for not present (either removed or not created at all).
+         * @param isoffset If true, the given str value is added to the existing value,
+         * if false, the existing density is ignored and overridden.
+         */
+        int set_field_strength( const point p, const field_id t, const int str, bool isoffset = false );
+        /**
+         * Get field of specific type at point.
+         * @return NULL if there is no such field entry at that place.
+         */
+        field_entry * get_field( const point p, const field_id t );
+        /**
+         * Add field entry at point, or set density if present
+         * @return false if the field could not be created (out of bounds), otherwise true.
+         */
+        bool add_field(const point p, const field_id t, const int density, const int age);
+        /**
+         * Add field entry at xy, or set density if present
+         * @return false if the field could not be created (out of bounds), otherwise true.
+         */
+        bool add_field(const int x, const int y, const field_id t, const int density);
+        /**
+         * Remove field entry at xy, ignored if the field entry is not present.
+         */
+        void remove_field( const int x, const int y, const field_id field_to_remove );
  bool process_fields(); // See fields.cpp
  bool process_fields_in_submap(submap * const current_submap, const int submap_x, const int submap_y); // See fields.cpp
  void step_in_field(const int x, const int y); // See fields.cpp
@@ -527,8 +590,10 @@ void add_corpse(int x, int y);
  void add_camp(const std::string& name, const int x, const int y);
 
 // Graffiti
- graffiti graffiti_at(int x, int y);
- bool add_graffiti(int x, int y, std::string contents);
+    bool has_graffiti_at(int x, int y) const;
+    const std::string &graffiti_at(int x, int y) const;
+    void set_graffiti(int x, int y, const std::string &contents);
+    void delete_graffiti(int x, int y);
 
 // mapgen.cpp functions
  void generate(const int x, const int y, const int z, const int turn);
@@ -584,7 +649,7 @@ void add_corpse(int x, int y);
     point getlocal(const int x, const int y ) const;
     point getlocal(const point p) const { return getlocal(p.x, p.y); }
  bool inboundsabs(const int x, const int y);
- bool inbounds(const int x, const int y);
+ bool inbounds(const int x, const int y) const;
 
  int getmapsize() { return my_MAPSIZE; };
 
@@ -616,7 +681,7 @@ protected:
 
  std::vector<item> nulitems; // Returned when &i_at() is asked for an OOB value
  ter_id nulter;  // Returned when &ter() is asked for an OOB value
- field nulfield; // Returned when &field_at() is asked for an OOB value
+ mutable field nulfield; // Returned when &field_at() is asked for an OOB value
  vehicle nulveh; // Returned when &veh_at() is asked for an OOB value
  int null_temperature;  // Because radiation does it too
 
@@ -637,6 +702,11 @@ protected:
     void set_abs_sub(const int x, const int y, const int z);
 
 private:
+    field& get_field(const int x, const int y);
+    void spread_gas( field_entry *cur, int x, int y, field_id curtype,
+                        int percent_spread, int outdoor_age_speedup );
+    void create_hot_air( int x, int y, int density );
+
  bool transparency_cache_dirty;
  bool outside_cache_dirty;
 
@@ -650,6 +720,8 @@ private:
   */
  submap *get_submap_at(int x, int y, int& offset_x, int& offset_y) const;
  submap *get_submap_at_grid(int gridx, int gridy) const;
+
+    void spawn_monsters( int gx, int gy, mongroup &group, bool ignore_sight );
 
  long determine_wall_corner(const int x, const int y, const long orig_sym);
  void cache_seen(const int fx, const int fy, const int tx, const int ty, const int max_range);

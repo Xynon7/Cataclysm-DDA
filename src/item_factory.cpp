@@ -110,8 +110,6 @@ void Item_factory::finialize_item_blacklist()
             remove_item(itm, furnlist[i].bash.items);
         }
     }
-    item_blacklist.clear();
-    item_whitelist.clear();
 }
 
 void add_to_set(t_string_set &s, JsonObject &json, const std::string &name)
@@ -162,7 +160,6 @@ void Item_factory::init()
     iuse_function_list["RAW_FISH"] = &iuse::raw_fish;
     iuse_function_list["RAW_WILDVEG"] = &iuse::raw_wildveg;
     iuse_function_list["SEWAGE"] = &iuse::sewage;
-
     iuse_function_list["HONEYCOMB"] = &iuse::honeycomb;
     iuse_function_list["ROYAL_JELLY"] = &iuse::royal_jelly;
     iuse_function_list["BANDAGE"] = &iuse::bandage;
@@ -210,13 +207,12 @@ void Item_factory::init()
     iuse_function_list["MARLOSS"] = &iuse::marloss;
     iuse_function_list["MARLOSS_SEED"] = &iuse::marloss_seed;
     iuse_function_list["MARLOSS_GEL"] = &iuse::marloss_gel;
+    iuse_function_list["MYCUS"] = &iuse::mycus;
     iuse_function_list["DOGFOOD"] = &iuse::dogfood;
     iuse_function_list["CATFOOD"] = &iuse::catfood;
 
     // TOOLS
-    iuse_function_list["LIGHTER"] = &iuse::lighter;
-    iuse_function_list["PRIMITIVE_FIRE"] = &iuse::primitive_fire;
-    iuse_function_list["REF_LIT"] = &iuse::ref_lit;
+    iuse_function_list["FIRESTARTER"] = &iuse::firestarter;
     iuse_function_list["SEW"] = &iuse::sew;
     iuse_function_list["EXTRA_BATTERY"] = &iuse::extra_battery;
     iuse_function_list["RECHARGEABLE_BATTERY"] = &iuse::rechargeable_battery;
@@ -288,10 +284,6 @@ void Item_factory::init()
     iuse_function_list["MININUKE"] = &iuse::mininuke;
     iuse_function_list["PHEROMONE"] = &iuse::pheromone;
     iuse_function_list["PORTAL"] = &iuse::portal;
-    iuse_function_list["MANHACK"] = &iuse::manhack;
-    iuse_function_list["TURRET"] = &iuse::turret;
-    iuse_function_list["TURRET_LASER"] = &iuse::turret_laser;
-    iuse_function_list["TURRET_RIFLE"] = &iuse::turret_rifle;
     iuse_function_list["UPS_OFF"] = &iuse::UPS_off;
     iuse_function_list["UPS_ON"] = &iuse::UPS_on;
     iuse_function_list["adv_UPS_OFF"] = &iuse::adv_UPS_off;
@@ -311,9 +303,7 @@ void Item_factory::init()
     iuse_function_list["LUMBER"] = &iuse::lumber;
     iuse_function_list["OXYTORCH"] = &iuse::oxytorch;
     iuse_function_list["HACKSAW"] = &iuse::hacksaw;
-    iuse_function_list["TENT"] = &iuse::tent;
-    iuse_function_list["LARGE_TENT"] = &iuse::large_tent;
-    iuse_function_list["SHELTER"] = &iuse::shelter;
+    iuse_function_list["PORTABLE_STRUCTURE"] = &iuse::portable_structure;
     iuse_function_list["TORCH_LIT"] = &iuse::torch_lit;
     iuse_function_list["BATTLETORCH_LIT"] = &iuse::battletorch_lit;
     iuse_function_list["BULLET_PULLER"] = &iuse::bullet_puller;
@@ -356,8 +346,11 @@ void Item_factory::init()
     iuse_function_list["EINKTABLETPC"] = &iuse::einktabletpc;
     iuse_function_list["CAMERA"] = &iuse::camera;
     iuse_function_list["EHANDCUFFS"] = &iuse::ehandcuffs;
+    iuse_function_list["CABLE_ATTACH"]  = &iuse::cable_attach;
+
     // MACGUFFINS
     iuse_function_list["MCG_NOTE"] = &iuse::mcg_note;
+
     // ARTIFACTS
     // This function is used when an artifact is activated
     // It examines the item's artifact-specific properties
@@ -690,6 +683,7 @@ void Item_factory::load_gun(JsonObject &jo)
     gun_template->reload_time = jo.get_int("reload");
     gun_template->pierce = jo.get_int("pierce", 0);
     gun_template->ammo_effects = jo.get_tags("ammo_effects");
+    gun_template->ups_charges = jo.get_int( "ups_charges", 0 );
 
     if (jo.has_array("valid_mod_locations")) {
         JsonArray jarr = jo.get_array("valid_mod_locations");
@@ -819,6 +813,8 @@ void Item_factory::load_comestible(JsonObject &jo)
     comest_template->quench = jo.get_int("quench", 0);
     comest_template->nutr = jo.get_int("nutrition", 0);
     comest_template->spoils = jo.get_int("spoils_in", 0);
+    // In json it's in hours, here it shall be in turns, as item::rot is also in turns.
+    comest_template->spoils *= 600;
     comest_template->brewtime = jo.get_int("brew_time", 0);
     comest_template->addict = jo.get_int("addiction_potential", 0);
     comest_template->charges = jo.get_long("charges", 0);
@@ -880,6 +876,7 @@ void Item_factory::load_gunmod(JsonObject &jo)
     gunmod_template->dispersion = jo.get_int("dispersion_modifier", 0);
     gunmod_template->recoil = jo.get_int("recoil_modifier", 0);
     gunmod_template->burst = jo.get_int("burst_modifier", 0);
+    gunmod_template->range = jo.get_int("range", 0);
     gunmod_template->clip = jo.get_int("clip_size_modifier", 0);
     gunmod_template->acceptible_ammo_types = jo.get_tags("acceptable_ammo");
     gunmod_template->skill_used = Skill::skill(jo.get_string("skill", "gun"));
@@ -928,10 +925,11 @@ void Item_factory::load_basic_info(JsonObject &jo, itype *new_item_template)
         // core data, we override it. This allows mods to change
         // item from core data.
         delete m_templates[new_id];
+    } else {
+        standard_itype_ids.push_back(new_id);
     }
     m_templates[new_id] = new_item_template;
     itypes[new_id] = new_item_template;
-    standard_itype_ids.push_back(new_id);
 
     // And then proceed to assign the correct field
     new_item_template->price = jo.get_int("price");
@@ -1439,6 +1437,15 @@ use_function Item_factory::use_from_object(JsonObject obj)
         obj.read("stat_adjustments", actor->stat_adjustments);
         obj.read("fields_produced", actor->fields_produced);
         return use_function(actor.release());
+    } else if( type == "place_monster" ) {
+        std::unique_ptr<place_monster_iuse> actor( new place_monster_iuse() );
+        actor->mtype_id = obj.get_string( "monster_id" );
+        obj.read( "friendly_msg", actor->friendly_msg );
+        obj.read( "hostile_msg", actor->hostile_msg );
+        obj.read( "difficulty", actor->difficulty );
+        obj.read( "moves", actor->moves );
+        obj.read( "place_randomly", actor->place_randomly );
+        return use_function( actor.release() );
     } else {
         debugmsg("unknown use_action type %s", type.c_str());
         return use_function();

@@ -66,13 +66,9 @@ void remove_atomic_mod( item &it, player &p )
     }
     p.add_msg_if_player( _( "You remove the plutonium cells of your %s!" ), it.tname().c_str() );
     item mod( "battery_atomic", calendar::turn );
+    mod.charges = it.charges;
+    it.charges = 0;
     p.i_add_or_drop( mod, 1 );
-    if( it.charges >= 2500 ) {
-        item plutonium( "plut_cell", calendar::turn );
-        plutonium.charges = it.charges / 2500;
-        p.i_add_or_drop( plutonium, 1 );
-        it.charges %= 2500;
-    }
     it.item_tags.erase( "ATOMIC_AMMO" );
     it.item_tags.erase( "NO_UNLOAD" );
     it.item_tags.erase( "RADIOACTIVE" );
@@ -91,6 +87,19 @@ void remove_ups_mod( item &it, player &p )
     it.item_tags.erase( "USE_UPS" );
     it.item_tags.erase( "NO_UNLOAD" );
     it.item_tags.erase( "NO_RELOAD" );
+}
+
+// Checks that the player does not have an active item with LITCIG flag.
+bool check_litcig( player &u )
+{
+    auto cigs = u.items_with( []( const item & it ) {
+        return it.active && it.has_flag( "LITCIG" );
+    } );
+    if( cigs.empty() ) {
+        return true;
+    }
+    u.add_msg_if_player( m_info, _( "You're already smoking a %s!" ), cigs[0]->tname().c_str() );
+    return false;
 }
 
 static bool item_inscription(player *p, item *cut, std::string verb, std::string gerund,
@@ -833,12 +842,8 @@ int iuse::smoking_pipe(player *p, item *it, bool)
     std::vector<std::string> smokable_choices;
 
     // Fail fast(er) if we can't/shouldn't smoke.
-    std::vector<item *> active_items = p->inv.active_items();
-    for (item *i : active_items) {
-        if (i->has_flag("LITCIG")) {
-            p->add_msg_if_player(m_info, _("You're already smoking a %s!"), i->tname().c_str());
-            return 0;
-        }
+    if( !check_litcig( *p ) ) {
+        return 0;
     }
     if (!hasFire) {
         p->add_msg_if_player(m_info, _("You don't have anything to light it with!"));
@@ -926,12 +931,8 @@ int iuse::smoking(player *p, item *it, bool)
     bool hasFire = (p->has_charges("fire", 1));
 
     // make sure we're not already smoking something
-    std::vector<item *> active_items = p->inv.active_items();
-    for (auto iter : active_items) {
-        if (iter->has_flag("LITCIG")) {
-            p->add_msg_if_player(m_info, _("You're already smoking a %s!"), iter->tname().c_str());
-            return 0;
-        }
+    if( !check_litcig( *p ) ) {
+        return 0;
     }
 
     if (!hasFire) {
@@ -1476,12 +1477,112 @@ int iuse::chew(player *p, item *it, bool)
     return it->type->charges_to_use();
 }
 
+static int marloss_reject_mutagen( player *p, item *it )
+{
+    // I've been unable to replicate the rejections on marloss berries
+    // but best to be careful-KA101.
+    if( (it->type->can_use( "MYCUS" )) || (it->type->can_use( "MARLOSS" )) ||
+      (it->type->can_use( "MARLOSS_SEED" )) || (it->type->can_use( "MARLOSS_GEL" )) ) {
+        return 0;
+    }
+    if (p->has_trait("THRESH_MARLOSS")) {
+        p->add_msg_if_player(m_warning, _("The %s burns white-hot inside you, and you collapse to the ground!"), it->tname().c_str());
+        p->vomit();
+        p->mod_pain(35);
+        // Lose a significant amount of HP, probably about 25-33%
+        p->hurtall(rng(20, 35));
+        // Hope you were eating someplace safe.  Mycus v. Goo in your guts is no joke.
+        p->fall_asleep((3000 - p->int_cur * 10));
+        // Marloss is too thoroughly into your body to be dislodged by orals.
+        p->toggle_mutation("MUTAGEN_AVOID");
+        p->add_msg_if_player(m_warning, _("That was some toxic %s!  Let's stick with Marloss next time, that's safe."), it->tname().c_str());
+        p->add_memorial_log(pgettext("memorial_male", "Suffered a toxic marloss/mutagen reaction."),
+                            pgettext("memorial_female", "Suffered a toxic marloss/mutagen reaction."));
+        return it->type->charges_to_use();
+    }
+
+    if (p->has_trait("THRESH_MYCUS")) {
+        p->add_msg_if_player(m_info, _("This is a contaminant.  We reject it from the Mycus."));
+        if( p->has_trait("M_SPORES") || p->has_trait("M_FERTILE") ||
+            p->has_trait("M_BLOSSOMS") || p->has_trait("M_BLOOM") ) {
+            p->add_msg_if_player(m_good, _("We empty the %s and reflexively dispense spores onto the mess."));
+            g->m.ter_set(p->posx, p->posy, t_fungus);
+            p->add_memorial_log(pgettext("memorial_male", "Destroyed a harmful invader."),
+                                pgettext("memorial_female", "Destroyed a harmful invader."));
+            return it->type->charges_to_use();
+        }
+        else {
+            p->add_msg_if_player(m_bad, _("We must eliminate this contaminant at the earliest opportunity."));
+            return it->type->charges_to_use();
+        }
+    }
+    return 0;
+}
+
+static int marloss_reject_mut_iv( player *p, item *it )
+{
+    if( it->type->can_use( "MYCUS" ) ) {
+        return 0;
+    }
+    if (p->has_trait("THRESH_MARLOSS")) {
+        p->add_msg_if_player(m_warning, _("The %s sears your insides white-hot, and you collapse to the ground!"), it->tname().c_str());
+        p->vomit();
+        p->mod_pain(55);
+        // Lose a significant amount of HP, probably about 25-33%
+        p->hurtall(rng(30, 45));
+         // Hope you were eating someplace safe.  Mycus v. Goo in your guts is no joke.
+        p->fall_asleep((4000 - p->int_cur * 10));
+        // Injection does the trick.  Burn the fungus out.
+        p->toggle_mutation("THRESH_MARLOSS");
+        p->toggle_mutation("MUTAGEN_AVOID");
+        //~ Recall that Marloss mutations made you feel warmth spreading throughout your body.  That's gone.
+        p->add_msg_if_player(m_warning, _("You feel a cold burn inside, as though everything warm has left you."));
+        if( it->type->can_use("PURIFY_IV") ) {
+            p->add_msg_if_player(m_warning, _("It was probably that marloss--how did you know to call it \"marloss\" anyway?"));
+            p->add_msg_if_player(m_warning, _("Best to stay clear of that alien crap in future."));
+            p->add_memorial_log(pgettext("memorial_male", "Burned out a particularly nasty fungal infestation."),
+                                pgettext("memorial_female", "Burned out a particularly nasty fungal infestation."));
+        } else {
+            p->add_memorial_log(pgettext("memorial_male", "Suffered a toxic marloss/mutagen reaction."),
+                                pgettext("memorial_female", "Suffered a toxic marloss/mutagen reaction."));
+        }
+        return it->type->charges_to_use();
+    }
+
+    if (p->has_trait("THRESH_MYCUS")) {
+        p->add_msg_if_player(m_info, _("This is a contaminant.  We reject it from the Mycus."));
+        if( p->has_trait("M_SPORES") || p->has_trait("M_FERTILE") ||
+            p->has_trait("M_BLOSSOMS") || p->has_trait("M_BLOOM") ) {
+            p->add_msg_if_player(m_good, _("We empty the %s and reflexively dispense spores onto the mess."));
+            g->m.ter_set(p->posx, p->posy, t_fungus);
+            p->add_memorial_log(pgettext("memorial_male", "Destroyed a harmful invader."),
+                                pgettext("memorial_female", "Destroyed a harmful invader."));
+            return it->type->charges_to_use();
+        } else {
+            p->add_msg_if_player(m_bad, _("We must eliminate this contaminant at the earliest opportunity."));
+            return it->type->charges_to_use();
+        }
+    }
+    return 0;
+}
+
 int iuse::mutagen(player *p, item *it, bool)
 {
-    if (!p->is_npc()) {
+    if (p->has_trait("MUTAGEN_AVOID")) {
+         //~"Uh-uh" is a sound used for "nope", "no", etc.
+        p->add_msg_if_player(m_warning, _("After what happened that last time? uh-uh.  You're not drinking that chemical stuff."));
+        return 0;
+    }
+
+    if (!p->is_npc() && !(p->has_trait("THRESH_MYCUS"))) {
         p->add_memorial_log(pgettext("memorial_male", "Consumed mutagen."),
                             pgettext("memorial_female", "Consumed mutagen."));
     }
+
+    if( marloss_reject_mutagen( p, it) ) {
+        return it->type->charges_to_use();
+    }
+
     if (p->has_trait("MUT_JUNKIE")) {
         p->add_msg_if_player(m_good, _("You quiver with anticipation..."));
         p->add_morale(MORALE_MUTAGEN, 5, 50);
@@ -1611,10 +1712,21 @@ int iuse::mutagen(player *p, item *it, bool)
 
 int iuse::mut_iv(player *p, item *it, bool)
 {
-    if (!p->is_npc()) {
+    if (p->has_trait("MUTAGEN_AVOID")) {
+         //~"Uh-uh" is a sound used for "nope", "no", etc.
+        p->add_msg_if_player(m_warning, _("After what happened that last time? uh-uh.  You're not injecting that chemical stuff."));
+        return 0;
+    }
+
+    if (!p->is_npc() && !(p->has_trait("THRESH_MYCUS"))) {
         p->add_memorial_log(pgettext("memorial_male", "Injected mutagen."),
                             pgettext("memorial_female", "Injected mutagen."));
     }
+
+    if( marloss_reject_mut_iv( p, it) ) {
+        return it->type->charges_to_use();
+    }
+
     if (p->has_trait("MUT_JUNKIE")) {
         p->add_msg_if_player(m_good, _("You quiver with anticipation..."));
         p->add_morale(MORALE_MUTAGEN, 10, 100);
@@ -2010,10 +2122,21 @@ int iuse::mut_iv(player *p, item *it, bool)
 
 int iuse::purifier(player *p, item *it, bool)
 {
-    if (!p->is_npc()) {
+    if (p->has_trait("MUTAGEN_AVOID")) {
+         //~"Uh-uh" is a sound used for "nope", "no", etc.
+        p->add_msg_if_player(m_warning, _("After what happened that last time? uh-uh.  You're not drinking that chemical stuff."));
+        return 0;
+    }
+
+    if (!p->is_npc() && !(p->has_trait("THRESH_MYCUS"))) {
         p->add_memorial_log(pgettext("memorial_male", "Consumed purifier."),
                             pgettext("memorial_female", "Consumed purifier."));
     }
+
+    if( marloss_reject_mutagen( p, it ) ) {
+        it->type->charges_to_use();
+    }
+
     std::vector<std::string> valid; // Which flags the player has
     for (std::map<std::string, trait>::iterator iter = traits.begin(); iter != traits.end(); ++iter) {
         if (p->has_trait(iter->first) && !p->has_base_trait(iter->first)) {
@@ -2043,10 +2166,21 @@ int iuse::purifier(player *p, item *it, bool)
 
 int iuse::purify_iv(player *p, item *it, bool)
 {
-    if (!p->is_npc()) {
+    if (p->has_trait("MUTAGEN_AVOID")) {
+         //~"Uh-uh" is a sound used for "nope", "no", etc.
+        p->add_msg_if_player(m_warning, _("After what happened that last time? uh-uh.  You're not injecting that chemical stuff."));
+        return 0;
+    }
+
+    if (!p->is_npc() && !(p->has_trait("THRESH_MYCUS"))) {
         p->add_memorial_log(pgettext("memorial_male", "Injected purifier."),
                             pgettext("memorial_female", "Injected purifier."));
     }
+
+    if( marloss_reject_mut_iv( p, it ) ) {
+        return it->type->charges_to_use();
+    }
+
     std::vector<std::string> valid; // Which flags the player has
     for (std::map<std::string, trait>::iterator iter = traits.begin(); iter != traits.end(); ++iter) {
         if (p->has_trait(iter->first) && !p->has_base_trait(iter->first)) {
@@ -2087,15 +2221,26 @@ int iuse::marloss(player *p, item *it, bool t)
     if (p->is_npc()) {
         return it->type->charges_to_use();
     }
+    if (p->has_trait("MARLOSS_AVOID")) {
+        //~"Uh-uh" is a sound used for "nope", "no", etc.
+        p->add_msg_if_player(m_warning, _("After what happened that last time? uh-uh.  You're not eating that alien poison sac."));
+        return 0;
+    }
+    if (p->has_trait("THRESH_MYCUS")) {
+        p->add_msg_if_player(m_info, _("We no longer require this scaffolding.  We reserve it for other uses."));
+        return 0;
+    }
     // If we have the marloss in our veins, we are a "breeder" and will spread
     // the fungus.
     p->add_memorial_log(pgettext("memorial_male", "Ate a marloss berry."),
                         pgettext("memorial_female", "Ate a marloss berry."));
 
-    if (p->has_trait("MARLOSS")) {
+    if (p->has_trait("MARLOSS") || p->has_trait("THRESH_MARLOSS")) {
         p->add_msg_if_player(m_good,
                              _("As you eat the berry, you have a near-religious experience, feeling at one with your surroundings..."));
         p->add_morale(MORALE_MARLOSS, 100, 1000);
+        p->add_addiction(ADD_MARLOSS_B, 50);
+        p->add_addiction(ADD_MARLOSS_Y, 50);
         p->hunger = -100;
         monster spore(GetMType("mon_spore"));
         spore.friendly = -1;
@@ -2136,6 +2281,11 @@ int iuse::marloss(player *p, item *it, bool t)
     if (effect <= 3) {
         p->add_msg_if_player(_("This berry tastes extremely strange!"));
         p->mutate();
+        // Gruss dich, mutation drain, missed you!
+        p->mod_pain(2 * rng(1, 5));
+        p->hunger += 10;
+        p->fatigue += 5;
+        p->thirst += 10;
     } else if (effect <= 6) { // Radiation cleanse is below
         p->add_msg_if_player(m_good, _("This berry makes you feel better all over."));
         p->pkill += 30;
@@ -2149,9 +2299,40 @@ int iuse::marloss(player *p, item *it, bool t)
     } else if (effect == 8) {
         p->add_msg_if_player(m_bad, _("You take one bite, and immediately vomit!"));
         p->vomit();
+    } else if (g->u.crossed_threshold()) { // Mycus Rejection.  Goo already present fights off the fungus.
+        p->add_msg_if_player(m_bad, _("You feel a familiar warmth, but suddenly it surges into an excruciating burn as you convulse, vomiting, and black out..."));
+        p->add_memorial_log(pgettext("memorial_male", "Suffered Marloss Rejection."),
+                        pgettext("memorial_female", "Suffered Marloss Rejection."));
+        p->vomit();
+        p->vomit(); // Yes, make sure you're empty.
+        p->mod_pain(90);
+        p->hurtall(rng(40, 65));// No good way to say "lose half your current HP"
+        p->fall_asleep((6000 - p->int_cur * 10)); // Hope you were eating someplace safe.  Mycus v. Goo in your guts is no joke.
+        p->toggle_mutation("MARLOSS_BLUE");
+        p->toggle_mutation("MARLOSS");
+        p->toggle_mutation("MARLOSS_AVOID"); // And if you survive it's etched in your RNA, so you're unlikely to repeat the experiment.
+        p->rem_addiction(ADD_MARLOSS_R);
+        p->rem_addiction(ADD_MARLOSS_B);
+        p->rem_addiction(ADD_MARLOSS_Y);
+    } else if ( (p->has_trait("MARLOSS_BLUE") && p->has_trait("MARLOSS_YELLOW")) && (!p->has_trait("MARLOSS")) ) {
+        p->add_msg_if_player(m_bad, _("You feel a familiar warmth, but suddenly it surges into painful burning as you convulse and collapse to the ground..."));
+        p->fall_asleep((400 - p->int_cur * 5));
+        p->toggle_mutation("MARLOSS_BLUE");
+        p->toggle_mutation("MARLOSS_YELLOW");
+        p->toggle_mutation("THRESH_MARLOSS");
+        p->rem_addiction(ADD_MARLOSS_R);
+        g->m.ter_set(p->posx, p->posy, t_marloss);
+        p->add_memorial_log(pgettext("memorial_male", "Opened the Marloss Gateway."),
+                        pgettext("memorial_female", "Opened the Marloss Gateway."));
+        p->add_msg_if_player(m_good, _("You wake up in a marloss bush.  Almost *cradled* in it, actually, as though it grew there for you."));
+        //~ Beginning to hear the Mycus while conscious: that's it speaking
+        p->add_msg_if_player(m_good, _("unity. together we have reached the door. we provide the final key. now to pass through..."));
     } else if (!p->has_trait("MARLOSS")) {
         p->add_msg_if_player(_("You feel a strange warmth spreading throughout your body..."));
         p->toggle_mutation("MARLOSS");
+        p->add_addiction(ADD_MARLOSS_B, 60);
+        p->add_addiction(ADD_MARLOSS_Y, 60);
+        p->rem_addiction(ADD_MARLOSS_R);
     }
     return it->type->charges_to_use();
 }
@@ -2160,6 +2341,15 @@ int iuse::marloss_seed(player *p, item *it, bool t)
 {
     if (p->is_npc()) {
         return it->type->charges_to_use();
+    }
+    if (p->has_trait("MARLOSS_AVOID")) {
+        //~"Uh-uh" is a sound used for "nope", "no", etc.  "Drek" is a borrowed synonym for "shit".
+        p->add_msg_if_player(m_warning, _("After what happened that last time? uh-uh.  You're not eating that alien drek."));
+        return 0;
+    }
+    if (p->has_trait("THRESH_MYCUS")) {
+        p->add_msg_if_player(m_info, _("We no longer require this scaffolding.  We reserve it for other uses."));
+        return 0;
     }
     if (!(query_yn(_("Sure you want to eat the %s? You could plant it in a mound of dirt."),
                  it->tname().c_str())) ) {
@@ -2170,10 +2360,12 @@ int iuse::marloss_seed(player *p, item *it, bool t)
     p->add_memorial_log(pgettext("memorial_male", "Ate a marloss seed."),
                         pgettext("memorial_female", "Ate a marloss seed."));
 
-    if (p->has_trait("MARLOSS_BLUE")) {
+    if (p->has_trait("MARLOSS_BLUE") || p->has_trait("THRESH_MARLOSS")) {
         p->add_msg_if_player(m_good,
                              _("As you eat the seed, you have a near-religious experience, feeling at one with your surroundings..."));
         p->add_morale(MORALE_MARLOSS, 100, 1000);
+        p->add_addiction(ADD_MARLOSS_R, 50);
+        p->add_addiction(ADD_MARLOSS_Y, 50);
         p->hunger = -100;
         monster spore(GetMType("mon_spore"));
         spore.friendly = -1;
@@ -2214,6 +2406,11 @@ int iuse::marloss_seed(player *p, item *it, bool t)
     if (effect <= 3) {
         p->add_msg_if_player(_("This seed tastes extremely strange!"));
         p->mutate();
+        // HELLO MY NAME IS MUTATION DRAIN YOU KILLED MY MUTAGEN PREPARE TO DIE! ;-)
+        p->mod_pain(2 * rng(1, 5));
+        p->hunger += 10;
+        p->fatigue += 5;
+        p->thirst += 10;
     } else if (effect <= 6) { // Radiation cleanse is below
         p->add_msg_if_player(m_good, _("This seed makes you feel better all over."));
         p->pkill += 30;
@@ -2227,9 +2424,40 @@ int iuse::marloss_seed(player *p, item *it, bool t)
     } else if (effect == 8) {
         p->add_msg_if_player(m_bad, _("You take one bite, and immediately vomit!"));
         p->vomit();
+    } else if (g->u.crossed_threshold()) { // Mycus Rejection.  Goo already present fights off the fungus.
+        p->add_msg_if_player(m_bad, _("You feel a familiar warmth, but suddenly it surges into an excruciating burn as you convulse, vomiting, and black out..."));
+        p->add_memorial_log(pgettext("memorial_male", "Suffered Marloss Rejection."),
+                        pgettext("memorial_female", "Suffered Marloss Rejection."));
+        p->vomit();
+        p->vomit(); // Yes, make sure you're empty.
+        p->mod_pain(90);
+        p->hurtall(rng(40, 65));// No good way to say "lose half your current HP"
+        p->fall_asleep((6000 - p->int_cur * 10)); // Hope you were eating someplace safe.  Mycus v. Goo in your guts is no joke.
+        p->toggle_mutation("MARLOSS_BLUE");
+        p->toggle_mutation("MARLOSS");
+        p->toggle_mutation("MARLOSS_AVOID"); // And if you survive it's etched in your RNA, so you're unlikely to repeat the experiment.
+        p->rem_addiction(ADD_MARLOSS_R);
+        p->rem_addiction(ADD_MARLOSS_B);
+        p->rem_addiction(ADD_MARLOSS_Y);
+    } else if ( (p->has_trait("MARLOSS") && p->has_trait("MARLOSS_YELLOW")) && (!p->has_trait("MARLOSS_BLUE")) ) {
+        p->add_msg_if_player(m_bad, _("You feel a familiar warmth, but suddenly it surges into painful burning as you convulse and collapse to the ground..."));
+        p->fall_asleep((400 - p->int_cur * 5));
+        p->toggle_mutation("MARLOSS");
+        p->toggle_mutation("MARLOSS_YELLOW");
+        p->toggle_mutation("THRESH_MARLOSS");
+        p->rem_addiction(ADD_MARLOSS_B);
+        g->m.ter_set(p->posx, p->posy, t_marloss);
+        p->add_memorial_log(pgettext("memorial_male", "Opened the Marloss Gateway."),
+                        pgettext("memorial_female", "Opened the Marloss Gateway."));
+        p->add_msg_if_player(m_good, _("You wake up in a marloss bush.  Almost *cradled* in it, actually, as though it grew there for you."));
+        //~ Beginning to hear the Mycus while conscious: that's it speaking
+        p->add_msg_if_player(m_good, _("unity. together we have reached the door. we provide the final key. now to pass through..."));
     } else if (!p->has_trait("MARLOSS_BLUE")) {
         p->add_msg_if_player(_("You feel a strange warmth spreading throughout your body..."));
         p->toggle_mutation("MARLOSS_BLUE");
+        p->add_addiction(ADD_MARLOSS_R, 60);
+        p->add_addiction(ADD_MARLOSS_Y, 60);
+        p->rem_addiction(ADD_MARLOSS_B);
     }
     return it->type->charges_to_use();
 }
@@ -2239,15 +2467,26 @@ int iuse::marloss_gel(player *p, item *it, bool t)
     if (p->is_npc()) {
         return it->type->charges_to_use();
     }
+    if (p->has_trait("MARLOSS_AVOID")) {
+        //~"Uh-uh" is a sound used for "nope", "no", etc.
+        p->add_msg_if_player(m_warning, _("After what happened that last time? uh-uh.  You're not eating that alien slime."));
+        return 0;
+    }
+    if (p->has_trait("THRESH_MYCUS")) {
+        p->add_msg_if_player(m_info, _("We no longer require this scaffolding.  We reserve it for other uses."));
+        return 0;
+    }
     // If we have the marloss in our veins, we are a "breeder" and will spread
     // the fungus.
     p->add_memorial_log(pgettext("memorial_male", "Ate some marloss jelly."),
                         pgettext("memorial_female", "Ate some marloss jelly."));
 
-    if (p->has_trait("MARLOSS_YELLOW")) {
+    if (p->has_trait("MARLOSS_YELLOW") || p->has_trait("THRESH_MARLOSS")) {
         p->add_msg_if_player(m_good,
                              _("As you eat the jelly, you have a near-religious experience, feeling at one with your surroundings..."));
         p->add_morale(MORALE_MARLOSS, 100, 1000);
+        p->add_addiction(ADD_MARLOSS_R, 50);
+        p->add_addiction(ADD_MARLOSS_B, 50);
         p->hunger = -100;
         monster spore(GetMType("mon_spore"));
         spore.friendly = -1;
@@ -2288,6 +2527,11 @@ int iuse::marloss_gel(player *p, item *it, bool t)
     if (effect <= 3) {
         p->add_msg_if_player(_("This jelly tastes extremely strange!"));
         p->mutate();
+        // hihi! wavewave! mutation draindrain!
+        p->mod_pain(2 * rng(1, 5));
+        p->hunger += 10;
+        p->fatigue += 5;
+        p->thirst += 10;
     } else if (effect <= 6) { // Radiation cleanse is below
         p->add_msg_if_player(m_good, _("This jelly makes you feel better all over."));
         p->pkill += 30;
@@ -2301,9 +2545,103 @@ int iuse::marloss_gel(player *p, item *it, bool t)
     } else if (effect == 8) {
         p->add_msg_if_player(m_bad, _("You take one bite, and immediately vomit!"));
         p->vomit();
-    } else if (!p->has_trait("MARLOSS_YELOW")) {
+    } else if (g->u.crossed_threshold()) { // Mycus Rejection.  Goo already present fights off the fungus.
+        p->add_msg_if_player(m_bad, _("You feel a familiar warmth, but suddenly it surges into an excruciating burn as you convulse, vomiting, and black out..."));
+        p->add_memorial_log(pgettext("memorial_male", "Suffered Marloss Rejection."),
+                        pgettext("memorial_female", "Suffered Marloss Rejection."));
+        p->vomit();
+        p->vomit(); // Yes, make sure you're empty.
+        p->mod_pain(90);
+        p->hurtall(rng(40, 65));// No good way to say "lose half your current HP"
+        p->fall_asleep((6000 - p->int_cur * 10)); // Hope you were eating someplace safe.  Mycus v. Goo in your guts is no joke.
+        p->toggle_mutation("MARLOSS_BLUE");
+        p->toggle_mutation("MARLOSS");
+        p->toggle_mutation("MARLOSS_AVOID"); // And if you survive it's etched in your RNA, so you're unlikely to repeat the experiment.
+        p->rem_addiction(ADD_MARLOSS_R);
+        p->rem_addiction(ADD_MARLOSS_B);
+        p->rem_addiction(ADD_MARLOSS_Y);
+    } else if ( (p->has_trait("MARLOSS_BLUE") && p->has_trait("MARLOSS")) && (!p->has_trait("MARLOSS_YELLOW")) ) {
+        p->add_msg_if_player(m_bad, _("You feel a familiar warmth, but suddenly it surges into painful burning as you convulse and collapse to the ground..."));
+        p->fall_asleep((400 - p->int_cur * 5));
+        p->toggle_mutation("MARLOSS_BLUE");
+        p->toggle_mutation("MARLOSS");
+        p->rem_addiction(ADD_MARLOSS_Y);
+        p->toggle_mutation("THRESH_MARLOSS");
+        g->m.ter_set(p->posx, p->posy, t_marloss);
+        p->add_memorial_log(pgettext("memorial_male", "Opened the Marloss Gateway."),
+                        pgettext("memorial_female", "Opened the Marloss Gateway."));
+        p->add_msg_if_player(m_good, _("You wake up in a marloss bush.  Almost *cradled* in it, actually, as though it grew there for you."));
+        //~ Beginning to hear the Mycus while conscious: that's it speaking
+        p->add_msg_if_player(m_good, _("unity. together we have reached the door. we provide the final key. now to pass through..."));
+    } else if (!p->has_trait("MARLOSS_YELLOW")) {
         p->add_msg_if_player(_("You feel a strange warmth spreading throughout your body..."));
         p->toggle_mutation("MARLOSS_YELLOW");
+        p->add_addiction(ADD_MARLOSS_R, 60);
+        p->add_addiction(ADD_MARLOSS_B, 60);
+        p->rem_addiction(ADD_MARLOSS_Y);
+    }
+    return it->type->charges_to_use();
+}
+
+int iuse::mycus(player *p, item *it, bool t)
+{
+    if (p->is_npc()) {
+        return it->type->charges_to_use();
+    }
+    // Welcome our guide.  Welcome.  To. The Mycus.
+    if (p->has_trait("THRESH_MARLOSS")) {
+        p->add_memorial_log(pgettext("memorial_male", "Became one with the Mycus."),
+                        pgettext("memorial_female", "Became one with the Mycus."));
+        p->add_msg_if_player(m_info, _("The apple tastes amazing, and you finish it quickly, not even noticing the lack of any core or seeds."));
+        p->add_msg_if_player(m_good, _("You feel better all over."));
+        p->pkill += 30;
+        this->purifier(p, it, t); // Clear out some of that goo you may have floating around
+        p->radiation = 0;
+        p->healall(4); // Can't make you a whole new person, but not for lack of trying
+        p->add_msg_if_player(m_good, _("As the apple settles in, you feel ecstasy radiating through every part of your body..."));
+        p->add_morale(MORALE_MARLOSS, 1000, 1000); // Last time you'll ever have it this good.  So enjoy.
+        p->add_msg_if_player(m_good, _("Your eyes roll back in your head.  Everything dissolves into a blissful haze..."));
+        p->fall_asleep((3000 - p->int_cur * 10));
+        p->toggle_mutation("THRESH_MARLOSS");
+        p->toggle_mutation("THRESH_MYCUS");
+        //~ The Mycus does not use the term (or encourage the concept of) "you".  The PC is a local/native organism, but is now the Mycus.
+        //~ It still understands the concept, but uninitelligent fungaloids and mind-bent symbiotes should not need it.
+        //~ We are the Mycus.
+        p->add_msg_if_player(m_good, _("We welcome into us.  We have endured long in this forbidding world."));
+        p->add_msg_if_player(m_good, _("The natives have a saying: \"E Pluribus Unum\"  Out of many, one."));
+        p->add_msg_if_player(m_good, _("We welcome the union of our lines in our local guide.  We will prosper, and unite this world."));
+        p->add_msg_if_player(m_good, _("Even now, our fruits adapt to better serve local physiology."));
+        p->add_msg_if_player(m_good, _("As, in time, shall we adapt to better welcome those who have not received us."));
+        for (int x = p->posx - 3; x <= p->posx + 3; x++) {
+            for (int y = p->posy - 3; y <= p->posy + 3; y++) {
+                g->m.marlossify(x, y);
+            }
+        }
+        p->rem_addiction(ADD_MARLOSS_R);
+        p->rem_addiction(ADD_MARLOSS_B);
+        p->rem_addiction(ADD_MARLOSS_Y);
+    }
+    else if (p->has_trait("THRESH_MYCUS") && !p->has_trait("M_DEPENDENT")) { // OK, now set the hook.
+        if (!one_in(3)) {
+            p->mutate_category("MUTCAT_MYCUS");
+            p->hunger += 10;
+            p->fatigue += 5;
+            p->thirst += 10;
+            p->add_morale(MORALE_MARLOSS, 25, 200); // still covers up mutation pain
+        }
+    } else if (p->has_trait("THRESH_MYCUS")) {
+        p->pkill += 5;
+        p->stim += 5;
+    } else { // In case someone gets one without having been adapted first.
+        // Marloss is the Mycus' method of co-opting humans.  Mycus fruit is for symbiotes' maintenance and development.
+        p->add_msg_if_player(_("This apple tastes really weird!  You're not sure it's good for you..."));
+        p->mutate();
+        p->mod_pain(2 * rng(1, 5));
+        p->hunger += 10;
+        p->fatigue += 5;
+        p->thirst += 10;
+        p->vomit(); // no hunger/quench benefit for you
+        p->mod_healthy_mod(-8);
     }
     return it->type->charges_to_use();
 }
@@ -2358,7 +2696,7 @@ int iuse::catfood(player *p, item *, bool)
 
 bool prep_firestarter_use(player *p, item *it, int &posx, int &posy)
 {
-    if (it->charges == 0) {
+    if ((it->charges == 0) && (!it->has_flag("LENS"))){ // lenses do not need charges
         return false;
     }
     if (p->is_underwater()) {
@@ -2387,84 +2725,109 @@ bool prep_firestarter_use(player *p, item *it, int &posx, int &posy)
     }
 }
 
-void resolve_firestarter_use(player *p, item *, int posx, int posy)
+int iuse::resolve_firestarter_use(player *p, item *, int posx, int posy)
 {
     if (g->m.add_field(point(posx, posy), fd_fire, 1, 100)) {
         p->add_msg_if_player(_("You successfully light a fire."));
     }
-}
-
-int iuse::lighter(player *p, item *it, bool)
-{
-    int dirx, diry;
-    if (prep_firestarter_use(p, it, dirx, diry)) {
-        p->moves -= 15;
-        resolve_firestarter_use(p, it, dirx, diry);
-        return it->type->charges_to_use();
-    }
     return 0;
 }
 
-int iuse::primitive_fire(player *p, item *it, bool)
+int iuse::calculate_time_for_lens_fire (player *p, float light_level) {
+    // base moves based on sunlight levels... 1 minute when sunny (80 lighting), ~10 minutes when clear (60 lighting)
+    float moves_base = (std::pow((80/light_level),8)) * 1000 ;
+    // survival 0 takes 3 * moves_base, survival 1 takes 1,5 * moves_base, max moves capped at moves_base
+    float moves_modifier = 1/((p->skillLevel("survival"))*0.33 + 0.33);
+    if (moves_modifier < 1) {
+        moves_modifier = 1;
+    }
+    return int(moves_base * moves_modifier);
+}
+
+int iuse::firestarter(player *p, item *it, bool t)
 {
     int posx, posy;
-    if (prep_firestarter_use(p, it, posx, posy)) {
-        p->moves -= 500;
-        const int skillLevel = p->skillLevel("survival");
-        const int sides = 10;
-        const int base_dice = 3;
-        // aiming for ~50% success at skill level 3, and possible but unheard of at level 0
-        const int difficulty = (base_dice + 3) * sides / 2;
-        if (dice(skillLevel + base_dice, 10) >= difficulty) {
-            resolve_firestarter_use(p, it, posx, posy);
+    if (it->has_flag("LENS")) {
+        if (((g->weather == WEATHER_CLEAR) || (g->weather == WEATHER_SUNNY)) // needs the correct weather, light and to be outside
+        && (g->natural_light_level() >= 60 ) && !(g->m.has_flag("INDOORS", p->posx, p->posy))) {
+            if (prep_firestarter_use(p, it, posx, posy)) {
+                const int turns = calculate_time_for_lens_fire(p, g->natural_light_level()); // turns needed for activity
+                if (turns/1000 > 1) { // if it takes less than a minute, no need to inform the player about time
+                    p->add_msg_if_player(m_info, _("If the current weather holds, it will take around %d minutes to light a fire."), turns/1000);
+                }
+                p->assign_activity(ACT_START_FIRE, turns, -1, p->get_item_position(it), it->tname());
+                p->activity.values.push_back(g->natural_light_level()); // keep natural_light_level for comparing throughout the activity
+                p->activity.placement = point(posx, posy);
+                p->practice("survival", 5);
+            }
         } else {
-            p->add_msg_if_player(_("You try to light a fire, but fail."));
+        p->add_msg_if_player(_("You need direct sunlight to light a fire with this."));
         }
-        p->practice("survival", 10);
-        return it->type->charges_to_use();
-    }
-    return 0;
-}
-
-int iuse::ref_lit(player *p, item *it, bool t)
-{
-    if (p->is_underwater()) {
-        p->add_msg_if_player(_("The lighter is extinguished."));
-        it->make("ref_lighter");
-        it->active = false;
-        return 0;
-    }
-    if (t) {
-        if (it->charges < it->type->charges_to_use()) {
-            p->add_msg_if_player(_("The lighter burns out."));
+    } else if (it->has_flag("FIRE_DRILL")) {
+        if (prep_firestarter_use(p, it, posx, posy)) {
+            float skillLevel = float(p->skillLevel("survival"));
+            // success chance is 100% but time spent is min 5 minutes at skill=5 and it increases for lower skill levels.
+            // max time is 1 hour for 0 survival
+            const float moves_base = 5*1000;
+            if (skillLevel < 1) {
+                skillLevel = 0.536; // avoid dividing by zero. scaled so that skill level 0 means 60 minutes work
+            }
+            float moves_modifier = (std::pow((5/skillLevel),1.113)); // at survival=5 modifier=1, at survival=1 modifier=~6
+            if (moves_modifier < 1) {
+                moves_modifier = 1; // activity time improvement is capped at skillevel 5
+            }
+            const int turns = int (moves_base * moves_modifier);
+            p->add_msg_if_player(m_info, _("At your skill level, it will take around %d minutes to light a fire."), turns/1000);
+            p->assign_activity(ACT_START_FIRE, turns, -1, p->get_item_position(it), it->tname());
+            p->activity.placement = point(posx, posy);
+            p->practice("survival", 10);
+            return it->type->charges_to_use();
+        }
+    } else if (it->has_flag("REFILLABLE_LIGHTER")) {
+        if (p->is_underwater()) {
+            p->add_msg_if_player(_("The lighter is extinguished."));
             it->make("ref_lighter");
             it->active = false;
+            return 0;
         }
-    } else if (it->charges <= 0) {
-        p->add_msg_if_player(_("The %s winks out."), it->tname().c_str());
-    } else { // Turning it off
-        int choice = menu(true, _("refillable lighter (lit)"), _("extinguish"),
-                          _("light something"), _("cancel"), NULL);
-        switch (choice) {
-            case 1: {
-                p->add_msg_if_player(_("You extinguish the lighter."));
+        if (t) {
+            if (it->charges < it->type->charges_to_use()) {
+                p->add_msg_if_player(_("The lighter burns out."));
                 it->make("ref_lighter");
                 it->active = false;
-                return 0;
             }
-            break;
-            case 2: {
-                int dirx, diry;
-                if (prep_firestarter_use(p, it, dirx, diry)) {
-                    p->moves -= 15;
-                    resolve_firestarter_use(p, it, dirx, diry);
-                    return it->type->charges_to_use();
+        } else if (it->charges <= 0) {
+            p->add_msg_if_player(_("The %s winks out."), it->tname().c_str());
+        } else { // Turning it off
+            p->add_msg_if_player(_("turn off runs"));
+            int choice = menu(true, _("refillable lighter (lit)"), _("extinguish"),
+                              _("light something"), _("cancel"), NULL);
+            switch (choice) {
+                case 1: {
+                    p->add_msg_if_player(_("You extinguish the lighter."));
+                    it->make("ref_lighter");
+                    it->active = false;
+                    return 0;
                 }
-
+                break;
+                case 2: {
+                    if (prep_firestarter_use(p, it, posx, posy)) {
+                        p->moves -= 15;
+                        resolve_firestarter_use(p, it, posx, posy);
+                        return it->type->charges_to_use();
+                    }
+                }
             }
         }
+        return it->type->charges_to_use();
+    } else { // common ligher or matches
+        if (prep_firestarter_use(p, it, posx, posy)) {
+            p->moves -= 15;
+            resolve_firestarter_use(p, it, posx, posy);
+            return it->type->charges_to_use();
+        }
     }
-    return it->type->charges_to_use();
+    return 0;
 }
 
 int iuse::sew(player *p, item *it, bool)
@@ -3423,7 +3786,6 @@ int iuse::water_purifier(player *p, item *it, bool)
     }
     p->moves -= 150;
     pure->make("water_clean");
-    pure->is_rotten = false;
     pure->poison = 0;
     return pure->charges;
 }
@@ -3551,11 +3913,14 @@ static radio_tower *find_radio_station(int frequency)
 int iuse::directional_antenna(player *p, item *it, bool)
 {
     // Find out if we have an active radio
-    item radio = p->i_of_type("radio_on");
-    if (radio.typeId() != "radio_on") {
+    auto radios = p->items_with( []( const item & it ) {
+        return it.typeId() == "radio_on";
+    } );
+    if( radios.empty() ) {
         add_msg(m_info, _("Must have an active radio to check for signal direction."));
         return 0;
     }
+    const item radio = *radios.front();
     // Find the radio station its tuned to (if any)
     radio_tower *tower = find_radio_station(radio.frequency);
     if (tower == NULL) {
@@ -3917,6 +4282,9 @@ int iuse::picklock(player *p, item *it, bool)
     } else if (type == t_door_locked || type == t_door_locked_alarm || type == t_door_locked_interior) {
         door_name = rm_prefix(_("<door_name>door"));
         new_type = t_door_c;
+    } else if (type == t_door_locked_peep) {
+        door_name = rm_prefix(_("<door_name>door"));
+        new_type = t_door_c_peep;
     } else if (type == t_door_bar_locked) {
         door_name = rm_prefix(_("<door_name>door"));
         new_type = t_door_bar_o;
@@ -3985,14 +4353,19 @@ bool pry_nails(player *p, ter_id &type, int dirx, int diry)
         boards = 4;
         newter = t_window_empty;
         p->add_msg_if_player(_("You pry the boards from the window frame."));
-    } else if ( type == t_door_boarded || type == t_door_boarded_damaged
-            || type == t_rdoor_boarded || type == t_rdoor_boarded_damaged ) {
+    } else if ( type == t_door_boarded || type == t_door_boarded_damaged ||
+            type == t_rdoor_boarded || type == t_rdoor_boarded_damaged ||
+            type == t_door_boarded_peep || type == t_door_boarded_damaged_peep ) {
         nails = 8;
         boards = 4;
         if (type == t_door_boarded) {
             newter = t_door_c;
         } else if (type == t_door_boarded_damaged) {
             newter = t_door_b;
+        } else if (type == t_door_boarded_peep) {
+            newter = t_door_c_peep;
+        } else if (type == t_door_boarded_damaged_peep) {
+            newter = t_door_b_peep;
         } else if (type == t_rdoor_boarded) {
             newter = t_rdoor_c;
         } else { // if (type == t_rdoor_boarded_damaged)
@@ -4059,6 +4432,12 @@ int iuse::crowbar(player *p, item *it, bool)
         succ_action = _("You pry open the door.");
         fail_action = _("You pry, but cannot pry open the door.");
         new_type = t_door_o;
+        noisy = true;
+        difficulty = 6;
+    } else if (type == t_door_locked_peep) {
+        succ_action = _("You pry open the door.");
+        fail_action = _("You pry, but cannot pry open the door.");
+        new_type = t_door_o_peep;
         noisy = true;
         difficulty = 6;
     } else if (type == t_door_bar_locked) {
@@ -5226,8 +5605,7 @@ int iuse::throwable_extinguisher_act(player *, item *it, bool)
     if (pos.x == -999 || pos.y == -999) {
         return 0;
     }
-    field &fld = g->m.field_at(pos.x, pos.y);
-    if (fld.findField(fd_fire) != 0) {
+    if( g->m.get_field( pos, fd_fire ) != nullptr ) {
         // Reduce the strength of fire (if any) in the target tile.
         g->m.adjust_field_strength(pos, fd_fire, 0 - 1);
         // Slightly reduce the strength of fire around and in the target tile.
@@ -5702,8 +6080,8 @@ int iuse::pheromone(player *p, item *it, bool)
         return 0;
     }
 
-    p->add_msg_player_or_npc(_("You squeeze the pheremone ball.."),
-                             _("<npcname> squeezes the pheremone ball..."));
+    p->add_msg_player_or_npc(_("You squeeze the pheromone ball..."),
+                             _("<npcname> squeezes the pheromone ball..."));
 
     p->moves -= 15;
 
@@ -5742,136 +6120,6 @@ int iuse::portal(player *p, item *it, bool)
     }
     g->m.add_trap(p->posx + rng(-2, 2), p->posy + rng(-2, 2), tr_portal);
     return it->type->charges_to_use();
-}
-
-int iuse::manhack(player *p, item *, bool)
-{
-    std::vector<point> valid; // Valid spawn locations
-    for (int x = p->posx - 1; x <= p->posx + 1; x++) {
-        for (int y = p->posy - 1; y <= p->posy + 1; y++) {
-            if (g->is_empty(x, y)) {
-                valid.push_back(point(x, y));
-            }
-        }
-    }
-    if (valid.empty()) { // No valid points!
-        p->add_msg_if_player(m_info, _("There is no adjacent square to release the manhack in!"));
-        return 0;
-    }
-    int index = rng(0, valid.size() - 1);
-    p->moves -= 60;
-    monster m_manhack(GetMType("mon_manhack"), valid[index].x, valid[index].y);
-    if (rng(0, p->int_cur / 2) + p->skillLevel("electronics") / 2 +
-        p->skillLevel("computer") < rng(0, 4)) {
-        p->add_msg_if_player(m_bad, _("You misprogram the manhack; it's hostile!"));
-    } else {
-        p->add_msg_if_player(_("The manhack flies from your hand and surveys the area!"));
-        m_manhack.friendly = -1;
-    }
-    g->add_zombie(m_manhack);
-    return 1;
-}
-
-int iuse::turret(player *p, item *, bool)
-{
-    int dirx, diry;
-    if (!choose_adjacent(_("Place the turret where?"), dirx, diry)) {
-        return 0;
-    }
-    if (!g->is_empty(dirx, diry)) {
-        p->add_msg_if_player(m_info, _("You cannot place a turret there."));
-        return 0;
-    }
-
-    p->moves -= 100;
-    monster mturret(GetMType("mon_turret"), dirx, diry);
-    const int ammopos = p->inv.position_by_type("9mm");
-    int ammo = 0;
-    if (ammopos != INT_MIN) {
-        item &ammoitem = p->inv.find_item(ammopos);
-        ammo = std::min(ammoitem.charges, long(500));
-        p->inv.reduce_charges(ammopos, ammo);
-        p->add_msg_if_player(ngettext("You load %d x 9mm round into the turret.",
-                                      "You load %d x 9mm rounds into the turret.", ammo), ammo);
-    } else {
-        p->add_msg_if_player(m_info,
-                             _("If you had standard factory-built 9mm bullets, you could load the turret."));
-    }
-    mturret.ammo = ammo;
-    if (rng(0, p->int_cur / 2) + p->skillLevel("electronics") / 2 +
-        p->skillLevel("computer") < rng(0, 6)) {
-        p->add_msg_if_player(m_warning, _("The turret scans you and makes angry beeping noises!"));
-    } else {
-        p->add_msg_if_player(m_warning, _("The turret emits an IFF beep as it scans you."));
-        mturret.friendly = -1;
-    }
-    g->add_zombie(mturret);
-    return 1;
-}
-
-
-int iuse::turret_laser(player *p, item *, bool)
-{
-    int dirx, diry;
-    if (!choose_adjacent(_("Place the turret where?"), dirx, diry)) {
-        return 0;
-    }
-    if (!g->is_empty(dirx, diry)) {
-        p->add_msg_if_player(m_info, _("You cannot place a turret there."));
-        return 0;
-    }
-
-    p->moves -= 100;
-    monster mturret(GetMType("mon_laserturret"), dirx, diry);
-    if (rng(0, p->int_cur / 2) + p->skillLevel("electronics") / 2 +
-        p->skillLevel("computer") < rng(0, 6)) {
-        p->add_msg_if_player(m_warning, _("The laser turret scans you and makes angry beeping noises!"));
-    } else {
-        p->add_msg_if_player(m_warning, _("The laser turret emits an IFF beep as it scans you."));
-        mturret.friendly = -1;
-    }
-    if (!g->is_in_sunlight(mturret.posx(), mturret.posy())) {
-        p->add_msg_if_player(_("A flashing LED on the laser turret appears to indicate low light."));
-    }
-    g->add_zombie(mturret);
-    return 1;
-}
-
-int iuse::turret_rifle(player *p, item *, bool)
-{
-    int dirx, diry;
-    if (!choose_adjacent(_("Place the turret where?"), dirx, diry)) {
-        return 0;
-    }
-    if (!g->is_empty(dirx, diry)) {
-        p->add_msg_if_player(m_info, _("You cannot place a turret there."));
-        return 0;
-    }
-
-    p->moves -= 100;
-    monster mturret(GetMType("mon_turret_rifle"), dirx, diry);
-    const int ammopos = p->inv.position_by_type("556");
-    int ammo = 0;
-    if (ammopos != INT_MIN) {
-        item &ammoitem = p->inv.find_item(ammopos);
-        ammo = std::min(ammoitem.charges, long(500));
-        p->inv.reduce_charges(ammopos, ammo);
-        p->add_msg_if_player(ngettext("You load %d x 5.56 round into the turret.",
-                                      "You load %d x 5.56 rounds into the turret.", ammo), ammo);
-    } else {
-        p->add_msg_if_player(m_info,
-                             _("If you had standard factory-built 5.56 bullets, you could load the turret."));
-    }
-    mturret.ammo = ammo;
-    if (rng(0, p->int_cur / 2) + p->skillLevel("electronics") / 2 +
-        p->skillLevel("computer") < rng(0, 6)) {
-        p->add_msg_if_player(m_warning, _("The turret scans you and makes angry beeping noises!"));
-    } else {
-        p->add_msg_if_player(m_warning, _("The turret emits an IFF beep as it scans you."));
-        mturret.friendly = -1;
-    }
-    g->add_zombie(mturret);
-    return 1;
 }
 
 int iuse::UPS_off(player *p, item *it, bool)
@@ -6906,121 +7154,67 @@ int iuse::hacksaw(player *p, item *it, bool)
     return it->type->charges_to_use();
 }
 
-int iuse::tent(player *p, item *, bool)
+int iuse::portable_structure(player *p, item *it, bool)
 {
+    int radius = it->type->id == "large_tent_kit" ? 2 : 1;
+    furn_id floor =
+        it->type->id == "tent_kit"       ? f_groundsheet
+      : it->type->id == "large_tent_kit" ? f_large_groundsheet
+      :                                    f_skin_groundsheet;
+    furn_id wall =
+        it->type->id == "tent_kit"       ? f_canvas_wall
+      : it->type->id == "large_tent_kit" ? f_large_canvas_wall
+      :                                    f_skin_wall;
+    furn_id door =
+        it->type->id == "tent_kit"       ? f_canvas_door
+      : it->type->id == "large_tent_kit" ? f_large_canvas_door
+      :                                    f_skin_door;
+    furn_id center_floor =
+        it->type->id == "large_tent_kit" ? f_center_groundsheet
+                                         : floor;
+
+    int diam = 2*radius + 1;
+
     int dirx, diry;
-    if(!choose_adjacent(_("Pitch the tent towards where (3x3 clear area)?"), dirx, diry)) {
+    if (!choose_adjacent(
+            string_format(_("Put up the %s where (%dx%d clear area)?"),
+                it->tname().c_str(),
+                diam, diam),
+            dirx, diry)) {
         return 0;
     }
 
-    //must place the center of the tent two spaces away from player
-    //dirx and diry will be integratined with the player's position
-    int posx = dirx - p->posx;
-    int posy = diry - p->posy;
-    if(posx == 0 && posy == 0) {
-        p->add_msg_if_player(m_info, _("Invalid Direction"));
-        return 0;
-    }
-    posx = posx * 2 + p->posx;
-    posy = posy * 2 + p->posy;
-    for (int i = -1; i <= 1; i++) {
-        for (int j = -1; j <= 1; j++) {
+    // We place the center of the structure (radius + 1)
+    // spaces away from the player.
+    // First check there's enough room.
+    int posx = radius * (dirx - p->posx) + dirx;
+        //(radius + 1)*posx + p->posx;
+    int posy = radius * (diry - p->posy) + diry;
+    for (int i = -radius; i <= radius; i++) {
+        for (int j = -radius; j <= radius; j++) {
             if (!g->m.has_flag("FLAT", posx + i, posy + j) ||
-                g->m.has_furn(posx + i, posy + j)) {
-                add_msg(m_info, _("You need a 3x3 flat space to place a tent."));
+                    g->m.has_furn(posx + i, posy + j)) {
+                add_msg(m_info, _("There isn't enough space in that direction."));
                 return 0;
             }
         }
     }
-    for (int i = -1; i <= 1; i++) {
-        for (int j = -1; j <= 1; j++) {
-            g->m.furn_set(posx + i, posy + j, f_canvas_wall);
+    // Make a square of floor surrounded by wall.
+    for (int i = -radius; i <= radius; i++) {
+        for (int j = -radius; j <= radius; j++) {
+            g->m.furn_set(posx + i, posy + j, wall);
         }
     }
-    g->m.furn_set(posx, posy, f_groundsheet);
-    g->m.furn_set(posx - (dirx - p->posx), posy - (diry - p->posy), f_canvas_door);
-    add_msg(m_info, _("You set up the tent on the ground."));
-    return 1;
-}
-
-int iuse::large_tent(player *p, item *, bool)
-{
-    int dirx, diry;
-    if(!choose_adjacent(_("Pitch the tent towards where (5x5 clear area)?"), dirx, diry)) {
-        return 0;
-    }
-
-    //must place the center of the tent three spaces away from player
-    //dirx and diry will be integratined with the player's position
-    int posx = dirx - p->posx;
-    int posy = diry - p->posy;
-    if(posx == 0 && posy == 0) {
-        p->add_msg_if_player(m_info, _("Invalid Direction"));
-        return 0;
-    }
-    posx = posx * 3 + p->posx;
-    posy = posy * 3 + p->posy;
-    for (int i = -2; i <= 2; i++) {
-        for (int j = -2; j <= 2; j++) {
-            if (!g->m.has_flag("FLAT", posx + i, posy + j) ||
-                g->m.has_furn(posx + i, posy + j)) {
-                add_msg(m_info, _("You need a 5x5 flat space to place this tent."));
-                return 0;
-            }
+    for (int i = -(radius - 1); i <= (radius - 1); i++) {
+        for (int j = -(radius - 1); j <= (radius - 1); j++) {
+            g->m.furn_set(posx + i, posy + j, floor);
         }
     }
-    for (int i = -2; i <= 2; i++) {
-        for (int j = -2; j <= 2; j++) {
-            g->m.furn_set(posx + i, posy + j, f_large_canvas_wall);
-        }
-    }
-    for (int i = -1; i <= 1; i++) {
-        for (int j = -1; j <= 1; j++) {
-            g->m.furn_set(posx + i, posy + j, f_large_groundsheet);
-        }
-    }
-    // f_center_groundsheet instead of f_large_groundsheet so the
-    // iexamine function for the tent works properly
-    g->m.furn_set(posx, posy, f_center_groundsheet);
-    g->m.furn_set(posx - ((dirx - p->posx) * 2), posy - ((diry - p->posy) * 2), f_large_canvas_door);
-//    g->m.furn_set((posx - (dirx - p->posx) * 2), (posy - (diry - p->posy) * 2), f_large_canvas_door);
-    add_msg(m_info, _("You set up the tent on the ground."));
-    return 1;
-}
-
-int iuse::shelter(player *p, item *, bool)
-{
-    int dirx, diry;
-    if(!choose_adjacent(_("Put up the shelter where?"), dirx, diry)) {
-        return 0;
-    }
-
-    //must place the center of the tent two spaces away from player
-    //dirx and diry will be integratined with the player's position
-    int posx = dirx - p->posx;
-    int posy = diry - p->posy;
-    if(posx == 0 && posy == 0) {
-        p->add_msg_if_player(m_info, _("Invalid Direction"));
-        return 0;
-    }
-    posx = posx*2 + p->posx;
-    posy = posy*2 + p->posy;
-    for (int i = -1; i <= 1; i++) {
-        for (int j = -1; j <= 1; j++) {
-            if (!g->m.has_flag("FLAT", posx + i, posy + j) ||
-                g->m.has_furn(posx + i, posy + j)) {
-                add_msg(m_info, _("You need a 3x3 flat space to place a shelter."));
-                return 0;
-            }
-        }
-    }
-    for (int i = -1; i <= 1; i++) {
-        for (int j = -1; j <= 1; j++) {
-            g->m.furn_set(posx + i, posy + j, f_skin_wall);
-        }
-    }
-    g->m.furn_set(posx, posy, f_skin_groundsheet);
-    g->m.furn_set(posx - (dirx - p->posx), posy - (diry - p->posy), f_skin_door);
+    // Place the center floor and the door.
+    g->m.furn_set(posx, posy, center_floor);
+    g->m.furn_set(posx - radius*(dirx - p->posx), posy - radius*(diry - p->posy), door);
+    add_msg(m_info, _("You set up the %s on the ground."), it->tname().c_str());
+    add_msg(m_info, _("Examine the center square to pack it up again."), it->tname().c_str());
     return 1;
 }
 
@@ -7472,7 +7666,7 @@ int iuse::artifact(player *p, item *it, bool)
             case AEA_GROWTH: {
                 monster tmptriffid(GetMType("mon_null"), p->posx, p->posy);
                 mattack tmpattack;
-                tmpattack.growplants(&tmptriffid);
+                tmpattack.growplants(&tmptriffid, -1);
             }
             break;
 
@@ -7575,7 +7769,7 @@ int iuse::artifact(player *p, item *it, bool)
                              !g->m.sees(monx, mony, p->posx, p->posy, 10, junk));
                     if (tries < 5) {
                         num_spawned++;
-                        spawned.sp_timeout = rng(8, 20);
+                        spawned.reset_special_rng(0);
                         spawned.spawn(monx, mony);
                         g->add_zombie(spawned);
                     }
@@ -7603,7 +7797,7 @@ int iuse::artifact(player *p, item *it, bool)
 
 int iuse::spray_can(player *p, item *it, bool)
 {
-    bool ismarker = (it->type->id == _("permanent_marker"));
+    bool ismarker = (it->type->id == "permanent_marker" || it->type->id == "survival_marker");
     if (ismarker) {
         int ret = menu(true, _("Write on what?"), _("The ground"), _("An item"), _("Cancel"), NULL);
 
@@ -7625,22 +7819,13 @@ int iuse::spray_can(player *p, item *it, bool)
     if (message.empty()) {
         return 0;
     } else {
-        if (g->m.add_graffiti(p->posx, p->posy, message)) {
+        g->m.set_graffiti( p->posx, p->posy, message );
             add_msg(
                 ismarker ?
                 _("You write a message on the ground.") :
                 _("You spray a message on the ground.")
             );
             p->moves -= 2 * message.length();
-        } else {
-            add_msg(
-                ismarker ?
-                _("You fail to write a message here.") :
-                _("You fail to spray a message here.")
-            );
-
-            return 0;
-        }
     }
     return it->type->charges_to_use();
 }
@@ -8488,10 +8673,9 @@ int iuse::robotcontrol(player *p, item *it, bool)
         return 0;
     }
 
-    int choice = -1;
-    choice = menu(true, _("Welcome to hackPRO!:"), _("Override IFF protocols"),
-                  _("Set friendly robots to passive mode"),
-                  _("Set friendly robots to combat mode"), _("Cancel"), NULL);
+    int choice = menu(true, _("Welcome to hackPRO!:"), _("Override IFF protocols"),
+                      _("Set friendly robots to passive mode"),
+                      _("Set friendly robots to combat mode"), _("Cancel"), NULL);
     switch( choice ) {
     case 1: { // attempt to make a robot friendly
         uimenu pick_robot;
@@ -8708,7 +8892,7 @@ bool einkpc_download_memory_card(player *p, item *eink, item *mc)
 
         mc->item_vars["MC_RECIPE"] = "";
 
-        std::vector<recipe *> candidates;
+        std::vector<const recipe *> candidates;
         recipe_map recipes = g->list_recipes();
 
         for (recipe_map::iterator map_iter = recipes.begin(); map_iter != recipes.end(); ++map_iter) {
@@ -8736,7 +8920,7 @@ bool einkpc_download_memory_card(player *p, item *eink, item *mc)
 
         if (candidates.size() > 0) {
 
-            recipe *r = candidates[rng(0, candidates.size() - 1)];
+            const recipe *r = candidates[rng(0, candidates.size() - 1)];
             const std::string rident = r->ident;
 
             const item dummy(r->result, 0);
@@ -9603,10 +9787,8 @@ int iuse::radiocaron(player *p, item *it, bool t)
         return 0;
     }
 
-    int choice = -1;
-
-    choice = menu(true, _("What do with activated RC car:"), _("Turn off"),
-                  _("Cancel"), NULL);
+    int choice = menu(true, _("What do with activated RC car:"), _("Turn off"),
+                      _("Cancel"), NULL);
 
     if (choice == 2) {
         return it->type->charges_to_use();
@@ -9965,7 +10147,7 @@ int iuse::multicooker(player *p, item *it, bool t)
 
             dmenu.addentry(d_cancel, true, 'q', _("Cancel"));
 
-            std::vector<recipe *> dishes;
+            std::vector<const recipe *> dishes;
 
             inventory crafting_inv = g->crafting_inventory(&g->u);
             //add some tools and qualities. we can't add this qualities to json, because multicook must be used only by activating, not as component other crafts.
@@ -10003,7 +10185,7 @@ int iuse::multicooker(player *p, item *it, bool t)
             if (d_cancel == choice) {
                 return 0;
             } else {
-                recipe *meal = dishes[choice - 1];
+                const recipe *meal = dishes[choice - 1];
                 int mealtime;
                 if (it->item_vars["MULTI_COOK_UPGRADE"] == "UPGRADE") {
                     mealtime = meal->time;
@@ -10106,6 +10288,96 @@ int iuse::multicooker(player *p, item *it, bool t)
 
         }
 
+    }
+
+    return 0;
+}
+
+int iuse::cable_attach(player *p, item *it, bool)
+{
+    if(it->item_vars.count("state") < 1) {
+        it->item_vars["state"] = "attach_first";
+    }
+
+    std::string initial_state = it->item_vars["state"];
+
+    if(initial_state == "attach_first") {
+        int posx, posy;
+        if(!choose_adjacent(_("Attach cable to vehicle where?"),posx,posy)) {
+            return 0;
+        }
+        auto veh = g->m.veh_at(posx, posy);
+        if (veh == nullptr) {
+            p->add_msg_if_player(_("There's no vehicle there."));
+            return 0;
+        } else {
+            point abspos = g->m.getabs(posx, posy);
+            it->active = true;
+            it->item_vars["state"] = "pay_out_cable";
+            it->item_vars["source_x"] = string_format("%d", abspos.x);
+            it->item_vars["source_y"] = string_format("%d", abspos.y);
+            it->item_vars["source_z"] = string_format("%d", g->levz);
+            it->process(p, point(p->xpos(), p->ypos()));
+        }
+        p->moves -= 15;
+    }
+    else if(initial_state == "pay_out_cable") {
+        int choice = -1;
+        uimenu kmenu;
+        kmenu.selected = 0;
+        kmenu.text = _("Using cable:");
+        kmenu.addentry(0, true, -1, _("Attach loose end of the cable"));
+        kmenu.addentry(1, true, -1, _("Detach and re-spool the cable"));
+        kmenu.addentry(-1, true, 'q', _("Cancel"));
+        kmenu.query();
+        choice = kmenu.ret;
+
+        if(choice == -1) {
+            return 0; // we did nothing.
+        } else if(choice == 1) {
+            it->reset_cable(p);
+            return 0;
+        }
+
+        int posx, posy;
+        if(!choose_adjacent(_("Attach cable to vehicle where?"),posx,posy)) {
+            return 0;
+        }
+        auto target_veh = g->m.veh_at(posx, posy);
+        if (target_veh == nullptr) {
+            p->add_msg_if_player(_("There's no vehicle there."));
+            return 0;
+        } else {
+            point source_global(atoi(it->item_vars["source_x"].c_str()),
+                                atoi(it->item_vars["source_y"].c_str()));
+            point source_local = g->m.getlocal(source_global);
+            auto source_veh = g->m.veh_at(source_local.x, source_local.y);
+
+            point target_global = g->m.getabs(posx, posy);
+            point target_local(posx, posy);
+
+            if(source_veh == nullptr) {
+                if( p != nullptr && p->has_item(it) ) {
+                    p->add_msg_if_player(m_bad, _("You notice the cable has come loose!"));
+                }
+                it->reset_cable(p);
+                return 0;
+            }
+
+            point vcoords = g->m.veh_part_coordinates(source_local.x, source_local.y);
+            vehicle_part source_part(it->typeId(), vcoords.x, vcoords.y, it);
+            source_part.target.first = target_global;
+            source_part.target.second = target_veh->real_global_pos();
+            source_veh->install_part(vcoords.x, vcoords.y, source_part);
+
+            vcoords = g->m.veh_part_coordinates(target_local.x, target_local.y);
+            vehicle_part target_part(it->typeId(), vcoords.x, vcoords.y, it);
+            target_part.target.first = source_global;
+            target_part.target.second = source_veh->real_global_pos();
+            target_veh->install_part(vcoords.x, vcoords.y, target_part);
+
+            return 1; // Let the cable be destroyed.
+        }
     }
 
     return 0;

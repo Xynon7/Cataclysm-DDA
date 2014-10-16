@@ -1,4 +1,4 @@
-#include "item.h"
+﻿#include "item.h"
 #include "player.h"
 #include "output.h"
 #include "skill.h"
@@ -184,7 +184,6 @@ void item::init() {
     light = nolight;
     fridge = 0;
     rot = 0;
-    is_rotten = false;
     last_rot_check = 0;
 }
 
@@ -216,7 +215,7 @@ void item::clear()
 
 bool item::is_null() const
 {
-    static const std::string s_null("null"); // used alot, no need to repeat
+    static const std::string s_null("null"); // used a lot, no need to repeat
     // 'this' can't be null, you say? Wrong. Stupid vehicle interact window.
     return (this == NULL || type == NULL || type->id == s_null);
 }
@@ -413,11 +412,11 @@ std::string item::info(bool showtext, std::vector<iteminfo> *dump, bool debug)
                 item * food = NULL;
                 if( goes_bad() ) {
                     food = this;
-                    maxrot = dynamic_cast<it_comest*>(type)->spoils * 600;
+                    maxrot = dynamic_cast<it_comest*>(type)->spoils;
                 } else if(is_food_container()) {
                     food = &contents[0];
                     if ( food->goes_bad() ) {
-                        maxrot =dynamic_cast<it_comest*>(food->type)->spoils * 600;
+                        maxrot =dynamic_cast<it_comest*>(food->type)->spoils;
                     }
                 }
                 if ( food != NULL && maxrot != 0 ) {
@@ -758,8 +757,8 @@ std::string item::info(bool showtext, std::vector<iteminfo> *dump, bool debug)
             if (!(book->recipes.empty())) {
                 std::string recipes = "";
                 size_t index = 1;
-                for (std::map<recipe*, int>::iterator iter = book->recipes.begin();
-                     iter != book->recipes.end(); ++iter, ++index) {
+                for( auto iter = book->recipes.begin();
+                     iter != book->recipes.end(); ++iter, ++index ) {
                     if(g->u.knows_recipe(iter->first)) {
                         recipes += "<color_ltgray>";
                     }
@@ -823,7 +822,7 @@ std::string item::info(bool showtext, std::vector<iteminfo> *dump, bool debug)
     if (!components.empty()) {
         dump->push_back( iteminfo( "DESCRIPTION", string_format( _("Made from: %s"), components_to_string().c_str() ) ) );
     } else {
-        recipe *dis_recipe = g->get_disassemble_recipe( type->id );
+        const recipe *dis_recipe = g->get_disassemble_recipe( type->id );
         if( dis_recipe != nullptr ) {
             std::ostringstream buffer;
             for( auto it = dis_recipe->components.begin(); it != dis_recipe->components.end(); ++it ) {
@@ -1115,28 +1114,44 @@ nc_color item::color(player *u) const
         ammotype amtype = ammo_type();
         if (u->has_ammo(amtype).size() > 0)
             ret = c_green;
+    } else if (is_food()) { // Rotten food shows up as a brown color
+        if (rotten()) {
+            ret = c_brown;
+        } else if (is_going_bad()) {
+            ret = c_yellow;
+        } else if (goes_bad()) {
+            ret = c_cyan;
+        }
+    } else if (is_food_container()) {
+        if (contents[0].rotten()) {
+            ret = c_brown;
+        } else if (contents[0].is_going_bad()) {
+            ret = c_yellow;
+        } else if (contents[0].goes_bad()) {
+            ret = c_cyan;
+        }
     } else if (is_ammo()) { // Likewise, ammo is green if you have guns that use it
         ammotype amtype = ammo_type();
         if (u->weapon.is_gun() && u->weapon.ammo_type() == amtype) {
             ret = c_green;
         } else {
-            if (u->inv.has_gun_for_ammo(amtype)) {
+            if (u->has_gun_for_ammo(amtype)) {
                 ret = c_green;
             }
         }
     } else if (is_book()) {
-    	if(u->has_identified( type->id )) {
-	    it_book* tmp = dynamic_cast<it_book*>(type);
-	    if (tmp->type && tmp->intel <= u->int_cur + u->skillLevel(tmp->type) &&
-		 (u->skillLevel(tmp->type) >= (int)tmp->req) &&
-		 (u->skillLevel(tmp->type) < (int)tmp->level)) {
-	        ret = c_ltblue;
-	    } else if (!u->studied_all_recipes(tmp)) {
-	        ret = c_yellow;
-	    }
-	} else {
-		ret = c_red;
-	}
+        if(u->has_identified( type->id )) {
+            it_book* tmp = dynamic_cast<it_book*>(type);
+            if (tmp->type && tmp->intel <= u->int_cur + u->skillLevel(tmp->type) &&
+                (u->skillLevel(tmp->type) >= (int)tmp->req) &&
+                (u->skillLevel(tmp->type) < (int)tmp->level)) {
+                ret = c_ltblue;
+            } else if (!u->studied_all_recipes(tmp)) {
+                ret = c_yellow;
+            }
+        } else {
+            ret = c_red;
+        }
     }
     return ret;
 }
@@ -1250,7 +1265,6 @@ std::string item::tname( unsigned int quantity, bool with_prefix ) const
         maintext = type->nname(quantity);
     }
 
-    const item* food = NULL;
     const it_comest* food_type = NULL;
     std::string tagtext = "";
     std::string toolmodtext = "";
@@ -1258,21 +1272,22 @@ std::string item::tname( unsigned int quantity, bool with_prefix ) const
     ret.str("");
     if (is_food())
     {
-        food = this;
         food_type = dynamic_cast<it_comest*>(type);
 
         if (food_type->spoils != 0)
         {
-            if(const_cast<item*>(food)->rotten()) {
+            if(rotten()) {
                 ret << _(" (rotten)");
+            } else if ( is_going_bad()) {
+                ret << _(" (old)");
             } else if ( rot < 100 ) {
                 ret << _(" (fresh)");
             }
         }
-        if (food->has_flag("HOT")) {
+        if (has_flag("HOT")) {
             ret << _(" (hot)");
             }
-        if (food->has_flag("COLD")) {
+        if (has_flag("COLD")) {
             ret << _(" (cold)");
             }
     }
@@ -1308,7 +1323,7 @@ std::string item::tname( unsigned int quantity, bool with_prefix ) const
 
     ret.str("");
 
-    //~ This is a string to construct the item name as it is displayed. This format string has been added for maximum flexibility. The strings are: %1$s: Damage text (eg. “bruised”. %2$s: burn adjectives (eg. “burnt”). %3$s: sided adjectives (eg. "left"). %4$s: tool modifier text (eg. “atomic”). %5$s: vehicle part text (eg. “3.8-Liter”. $6$s: main item text (eg. “apple”), %7$s: tags (eg. “ (wet) (fits)”).
+    //~ This is a string to construct the item name as it is displayed. This format string has been added for maximum flexibility. The strings are: %1$s: Damage text (eg. “bruised”). %2$s: burn adjectives (eg. “burnt”). %3$s: sided adjectives (eg. "left"). %4$s: tool modifier text (eg. “atomic”). %5$s: vehicle part text (eg. “3.8-Liter”). $6$s: main item text (eg. “apple”). %7$s: tags (eg. “ (wet) (fits)”).
     ret << string_format(_("%1$s%2$s%3$s%4$s%5$s%6$s%7$s"), damtext.c_str(), burntext.c_str(),
                          sidedtext.c_str(), toolmodtext.c_str(), vehtext.c_str(), maintext.c_str(),
                          tagtext.c_str());
@@ -1353,7 +1368,7 @@ int item::price() const
     }
 
     int ret = type->price;
-    if( is_rotten ) {
+    if( rotten() ) {
         // better price here calculation? No value at all?
         ret = type->price / 10;
     }
@@ -1361,22 +1376,29 @@ int item::price() const
         // maximal damage is 4, maximal reduction is 1/10 of the value.
         ret -= ret * static_cast<double>( damage ) / 40;
     }
-    if( curammo != nullptr && charges > 0 ) {
-        item tmp( curammo->id, 0 );
-        tmp.charges = charges;
-        ret += tmp.price();
-    }
     // The price from the json data is for the default-sized stack, like the volume
     // calculation.
     if( count_by_charges() || made_of( LIQUID ) ) {
         ret = ret * charges / static_cast<double>( max_charges() );
     }
-    if( is_tool() && curammo == nullptr ) {
-        // If the tool uses specific ammo (like gasoline) it is handled above.
-        const it_tool *itt = dynamic_cast<const it_tool*>( type );
-        if( itt->def_charges > 0 ) {
-            // Full value when charges == default charges, otherwise scalled down
-            ret = ret * std::max<long>( 0, charges ) / static_cast<double>( itt->def_charges );
+    const it_tool* ttype = dynamic_cast<const it_tool*>( type );
+    if( curammo != nullptr && charges > 0 ) {
+        item tmp( curammo->id, 0 );
+        tmp.charges = charges;
+        ret += tmp.price();
+    } else if( ttype != nullptr && curammo == nullptr ) {
+        if( charges > 0 && ttype->ammo != "NULL" ) {
+            // Tools sometimes don't have a curammo, when they should, e.g. flashlight
+            // that has been reloaded, apparently item::reload does not set curammo for tools.
+            item tmp( default_ammo( ttype->ammo ), 0 );
+            tmp.charges = charges;
+            ret += tmp.price();
+        } else if( ttype->def_charges > 0 && ttype->ammo == "NULL" ) {
+            // If the tool uses specific ammo (like gasoline) it is handled above.
+            // This case is for tools that have no ammo, but charges (e.g. spray can)
+            // Full value when charges == default charges, otherwise scaled down
+            // (e.g. half price for half full spray).
+            ret = ret * charges / static_cast<double>( ttype->def_charges );
         }
     }
     for (size_t i = 0; i < contents.size(); i++) {
@@ -1477,19 +1499,19 @@ int item::volume(bool unit_value, bool precise_value ) const
     if (corpse != NULL && typeId() == "corpse" ) {
         switch (corpse->size) {
             case MS_TINY:
-                ret = 2;
+                ret = 3;
                 break;
             case MS_SMALL:
-                ret = 40;
+                ret = 120;
                 break;
             case MS_MEDIUM:
-                ret = 75;
+                ret = 250;
                 break;
             case MS_LARGE:
-                ret = 160;
+                ret = 370;
                 break;
             case MS_HUGE:
-                ret = 600;
+                ret = 3500;
                 break;
         }
         if ( precise_value == true ) {
@@ -1675,17 +1697,58 @@ int item::has_gunmod(itype_id mod_type)
     return -1;
 }
 
-bool item::rotten()
+bool item::is_going_bad() const
 {
-    return is_rotten;
+    const it_comest *comest = dynamic_cast<const it_comest *>(type);
+    if( comest != nullptr && comest->spoils > 0) {
+        return ((float)rot / (float)comest->spoils) > 0.9;
+    }
+    return false;
+}
+
+bool item::rotten() const
+{
+    const it_comest *comest = dynamic_cast<const it_comest *>( type );
+    if( comest != nullptr && comest->spoils > 0 ) {
+        return rot > comest->spoils;
+    }
+    return false;
+}
+
+bool item::has_rotten_away() const
+{
+    const it_comest *comest = dynamic_cast<const it_comest *>( type );
+    if( comest != nullptr && comest->spoils > 0 ) {
+        // Twice the regular shelf life and it's gone.
+        return rot > comest->spoils * 2;
+    }
+    return false;
+}
+
+float item::get_relative_rot()
+{
+    const it_comest *comest = dynamic_cast<const it_comest *>( type );
+    if( comest != nullptr && comest->spoils > 0 ) {
+        return static_cast<float>( rot ) / comest->spoils;
+    }
+    return 0;
+}
+
+void item::set_relative_rot( float rel_rot )
+{
+    const it_comest *comest = dynamic_cast<const it_comest *>( type );
+    if( comest != nullptr && comest->spoils > 0 ) {
+        rot = rel_rot * comest->spoils;
+        // calc_rot uses last_rot_check (when it's not 0) instead of bday.
+        // this makes sure the rotting starts from now, not from bday.
+        last_rot_check = calendar::turn;
+        fridge = 0;
+        active = !rotten();
+    }
 }
 
 void item::calc_rot(const point &location)
 {
-    if (!is_food() || g == NULL){
-        is_rotten = false;
-        return;
-    }
     const int now = calendar::turn;
     if ( last_rot_check + 10 < now ) {
         const int since = ( last_rot_check == 0 ? bday : last_rot_check );
@@ -1703,14 +1766,11 @@ void item::calc_rot(const point &location)
             rot += (now - fridge) * 0.2;
             fridge = 0;
         }
+        // item stays active to let the item counter work
+        if( item_counter == 0 && rotten() ) {
+            active = false;
+        }
     }
-    it_comest* food = dynamic_cast<it_comest*>(type);
-    if (food->spoils != 0 && (rot > (signed int)food->spoils * 600)) {
-      is_rotten = true;
-    } else {
-      is_rotten = false;
-    }
-    if(is_rotten) {active = false;}
 }
 
 int item::brewing_time()
@@ -1766,7 +1826,7 @@ bool item::ready_to_revive()
     return false;
 }
 
-bool item::goes_bad()
+bool item::goes_bad() const
 {
     if (!is_food())
         return false;
@@ -2561,12 +2621,16 @@ int item::range(player *p)
         return 0;
     // Just use the raw ammo range for now.
     // we do NOT want to use the parent gun's range.
-    if(mode == "MODE_AUX") {
-        item* gunmod = active_gunmod();
-        if(gunmod && gunmod->curammo)
-            return gunmod->curammo->range;
-        else
-            return 0;
+    if( mode == "MODE_AUX" ) {
+        item *gunmod = active_gunmod();
+        int mod_range = 0;
+        if( gunmod ) {
+            mod_range += dynamic_cast<it_gunmod *>(gunmod->type)->range;
+            if( gunmod->curammo) {
+                mod_range += gunmod->curammo->range;
+            }
+        }
+        return mod_range;
     }
 
     // Ammoless weapons use weapon's range only
@@ -3712,6 +3776,56 @@ bool item::process_litcig( player *carrier, point pos )
     return false;
 }
 
+bool item::process_cable( player *p, point pos )
+{
+    if( item_vars["state"] != "pay_out_cable" ) {
+        return false;
+    }
+
+    int source_x = atoi(item_vars["source_x"].c_str());
+    int source_y = atoi(item_vars["source_y"].c_str());
+    int source_z = atoi(item_vars["source_z"].c_str());
+
+    point relpos= g->m.getlocal(source_x, source_y);
+    auto veh = g->m.veh_at(relpos.x, relpos.y);
+    if( veh == nullptr || source_z != g->levz ) {
+        if( p != nullptr && p->has_item(this) ) {
+            p->add_msg_if_player(m_bad, _("You notice the cable has come loose!"));
+        }
+        reset_cable(p);
+        return false;
+    }
+
+    point abspos = g->m.getabs(pos.x, pos.y);
+
+    int distance = rl_dist(abspos.x, abspos.y, source_x, source_y);
+    int max_charges = type->maximum_charges();
+    charges = max_charges - distance;
+
+    if( charges < 1 ) {
+        if( p != nullptr && p->has_item(this) ) {
+            p->add_msg_if_player(m_bad, _("The over-extended cable breaks loose!"));
+        }
+        reset_cable(p);
+    }
+
+    return false;
+}
+
+void item::reset_cable( player* p )
+{
+    int max_charges = type->maximum_charges();
+
+    item_vars["state"] = "attach_first";
+    active = false;
+    charges = max_charges;
+
+    if ( p != nullptr ) {
+        p->add_msg_if_player(m_info, _("You reel in the cable."));
+        p->moves -= charges * 10;
+    }
+}
+
 bool item::process_wet( player * /*carrier*/, point /*pos*/ )
 {
     item_counter--;
@@ -3868,11 +3982,31 @@ bool item::process( player *carrier, point pos )
     if( has_flag( "LITCIG" ) && process_litcig( carrier, pos ) ) {
         return true;
     }
+    if( has_flag( "CABLE_SPOOL" ) ) {
+        // DO NOT process this as a tool! It really isn't!
+        return process_cable(carrier, pos);
+    }
     if( is_tool() && process_tool( carrier, pos ) ) {
         return true;
     }
     if( has_flag( "CHARGE" ) && process_charger_gun( carrier, pos ) ) {
         return true;
     }
+    return false;
+}
+
+bool item::reduce_charges( long quantity )
+{
+    if( !count_by_charges() ) {
+        debugmsg( "Tried to remove %s by charges, but item is not counted by charges", tname().c_str() );
+        return false;
+    }
+    if( quantity > charges ) {
+        debugmsg( "Charges: Tried to remove charges that do not exist, removing maximum available charges instead" );
+    }
+    if( charges <= quantity ) {
+        return true;
+    }
+    charges -= quantity;
     return false;
 }

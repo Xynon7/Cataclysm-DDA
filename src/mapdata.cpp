@@ -83,6 +83,7 @@ void init_ter_bitflags_map() {
     ter_bitflags_map["PLANT"]                   = TFLAG_PLANT;          // full map iteration
     ter_bitflags_map["WALL"]                    = TFLAG_WALL;           // smells
     ter_bitflags_map["DEEP_WATER"]              = TFLAG_DEEP_WATER;     // Deep enough to submerge things
+    ter_bitflags_map["HARVESTED"]               = TFLAG_HARVESTED;      // harvested.  will not bear fruit.
 }
 
 void load_map_bash_item_drop_list(JsonArray ja, std::vector<map_bash_item_drop> &items) {
@@ -180,6 +181,7 @@ ter_t null_terrain_t() {
   new_terrain.examine = iexamine_function_from_string("none");
   new_terrain.harvest_season = 0;
   new_terrain.harvestable = "";
+  new_terrain.transforms_into = "t_null";
   new_terrain.loadid = 0;
   new_terrain.open = "";
   new_terrain.close = "";
@@ -298,17 +300,21 @@ void load_terrain(JsonObject &jsobj)
     std::string function_name = jsobj.get_string("examine_action");
     new_terrain.examine = iexamine_function_from_string(function_name);
   } else {
-    //If not specified, default to no action
+    // if not specified, default to no action
     new_terrain.examine = iexamine_function_from_string("none");
   }
-  //if the terrain has something harvestable it will have a product & season to be harvested in the json
+
+  // if the terrain has something harvestable
   if (jsobj.has_member("harvestable")) {
-    new_terrain.harvestable = jsobj.get_string("harvestable");
-    if (jsobj.get_string("harvest_season") == "SPRING") {new_terrain.harvest_season = 0;} //convert the season to int for calendar compare
-    if (jsobj.get_string("harvest_season") == "SUMMER") {new_terrain.harvest_season = 1;}
-    if (jsobj.get_string("harvest_season") == "AUTUMN") {new_terrain.harvest_season = 2;}
-    if (jsobj.get_string("harvest_season") == "WINTER") {new_terrain.harvest_season = 3;}
+    new_terrain.harvestable = jsobj.get_string("harvestable"); // get the harvestable
+    new_terrain.transforms_into = jsobj.get_string("transforms_into"); // get the terrain to transform into later on
+    //get the harvest season
+    if (jsobj.get_string("harvest_season") == "SPRING") {new_terrain.harvest_season = 0;} // convert the season to int for calendar compare
+    else if (jsobj.get_string("harvest_season") == "SUMMER") {new_terrain.harvest_season = 1;}
+    else if (jsobj.get_string("harvest_season") == "AUTUMN") {new_terrain.harvest_season = 2;}
+    else {new_terrain.harvest_season = 3;}
   }
+
   new_terrain.open = "";
   if ( jsobj.has_member("open") ) {
       new_terrain.open = jsobj.get_string("open");
@@ -337,7 +343,7 @@ ter_id t_null,
     t_hole, // Real nothingness; makes you fall a z-level
     // Ground
     t_dirt, t_sand, t_dirtmound, t_pit_shallow, t_pit,
-    t_pit_corpsed, t_pit_covered, t_pit_spiked, t_pit_spiked_covered,
+    t_pit_corpsed, t_pit_covered, t_pit_spiked, t_pit_spiked_covered, t_pit_glass, t_pit_glass_covered,
     t_rock_floor,
     t_grass,
     t_metal_floor,
@@ -363,9 +369,9 @@ ter_id t_null,
     t_bars,
     t_wall_h_r,t_wall_h_w,t_wall_h_b,t_wall_h_g,t_wall_h_p,t_wall_h_y,
     t_wall_v_r,t_wall_v_w,t_wall_v_b,t_wall_v_g,t_wall_v_p,t_wall_v_y,
-    t_door_c, t_door_b, t_door_o, t_rdoor_c, t_rdoor_b, t_rdoor_o,t_door_locked_interior, t_door_locked, t_door_locked_alarm, t_door_frame,
+    t_door_c, t_door_c_peep, t_door_b, t_door_b_peep, t_door_o, t_door_o_peep, t_rdoor_c, t_rdoor_b, t_rdoor_o,t_door_locked_interior, t_door_locked, t_door_locked_peep, t_door_locked_alarm, t_door_frame,
     t_chaingate_l, t_fencegate_c, t_fencegate_o, t_chaingate_c, t_chaingate_o,
-    t_door_boarded, t_door_boarded_damaged, t_rdoor_boarded, t_rdoor_boarded_damaged,
+    t_door_boarded, t_door_boarded_damaged, t_door_boarded_peep, t_rdoor_boarded, t_rdoor_boarded_damaged, t_door_boarded_damaged_peep,
     t_door_metal_c, t_door_metal_o, t_door_metal_locked, t_mdoor_frame,
     t_door_bar_c, t_door_bar_o, t_door_bar_locked,
     t_door_glass_c, t_door_glass_o,
@@ -378,7 +384,9 @@ ter_id t_null,
     t_paper,
     t_rock_wall, t_rock_wall_half,
     // Tree
-    t_tree, t_tree_young, t_tree_apple, t_tree_pear, t_tree_cherry, t_tree_peach, t_tree_apricot, t_tree_plum, t_tree_pine, t_tree_deadpine, t_underbrush, t_shrub, t_shrub_blueberry, t_shrub_strawberry, t_trunk,
+    t_tree, t_tree_young, t_tree_apple, t_tree_apple_harvested, t_tree_pear, t_tree_pear_harvested, t_tree_cherry, t_tree_cherry_harvested,
+    t_tree_peach, t_tree_peach_harvested, t_tree_apricot, t_tree_apricot_harvested, t_tree_plum, t_tree_plum_harvested,
+    t_tree_pine, t_tree_deadpine, t_underbrush, t_shrub, t_shrub_blueberry, t_shrub_strawberry, t_trunk,
     t_root_wall,
     t_wax, t_floor_wax,
     t_fence_v, t_fence_h, t_chainfence_v, t_chainfence_h, t_chainfence_posts,
@@ -386,7 +394,7 @@ ter_id t_null,
     t_railing_v, t_railing_h,
     // Nether
     t_marloss, t_fungus_floor_in, t_fungus_floor_sup, t_fungus_floor_out, t_fungus_wall, t_fungus_wall_v,
-    t_fungus_wall_h, t_fungus_mound, t_fungus, t_shrub_fungal, t_tree_fungal, t_tree_fungal_young,
+    t_fungus_wall_h, t_fungus_mound, t_fungus, t_shrub_fungal, t_tree_fungal, t_tree_fungal_young, t_marloss_tree,
     // Water, lava, etc.
     t_water_sh, t_water_dp, t_swater_sh, t_swater_dp, t_water_pool, t_sewage,
     t_lava,
@@ -428,6 +436,8 @@ void set_ter_ids() {
     t_pit_covered=terfind("t_pit_covered");
     t_pit_spiked=terfind("t_pit_spiked");
     t_pit_spiked_covered=terfind("t_pit_spiked_covered");
+    t_pit_glass=terfind("t_pit_glass");
+    t_pit_glass_covered=terfind("t_pit_glass_covered");
     t_rock_floor=terfind("t_rock_floor");
     t_grass=terfind("t_grass");
     t_metal_floor=terfind("t_metal_floor");
@@ -483,13 +493,17 @@ void set_ter_ids() {
     t_wall_v_r=terfind("t_wall_v_r");
     t_wall_v_w=terfind("t_wall_v_w");
     t_door_c=terfind("t_door_c");
+    t_door_c_peep=terfind("t_door_c_peep");
     t_door_b=terfind("t_door_b");
+    t_door_b_peep=terfind("t_door_b_peep");
     t_door_o=terfind("t_door_o");
+    t_door_o_peep=terfind("t_door_o_peep");
     t_rdoor_c=terfind("t_rdoor_c");
     t_rdoor_b=terfind("t_rdoor_b");
     t_rdoor_o=terfind("t_rdoor_o");
     t_door_locked_interior=terfind("t_door_locked_interior");
     t_door_locked=terfind("t_door_locked");
+    t_door_locked_peep=terfind("t_door_locked_peep");
     t_door_locked_alarm=terfind("t_door_locked_alarm");
     t_door_frame=terfind("t_door_frame");
     t_mdoor_frame=terfind("t_mdoor_frame");
@@ -500,8 +514,10 @@ void set_ter_ids() {
     t_chaingate_o=terfind("t_chaingate_o");
     t_door_boarded=terfind("t_door_boarded");
     t_door_boarded_damaged=terfind("t_door_boarded_damaged");
+    t_door_boarded_peep=terfind("t_door_boarded_peep");
     t_rdoor_boarded=terfind("t_rdoor_boarded");
     t_rdoor_boarded_damaged=terfind("t_rdoor_boarded_damaged");
+    t_door_boarded_damaged_peep=terfind("t_door_boarded_damaged_peep");
     t_door_metal_c=terfind("t_door_metal_c");
     t_door_metal_o=terfind("t_door_metal_o");
     t_door_metal_locked=terfind("t_door_metal_locked");
@@ -539,11 +555,17 @@ void set_ter_ids() {
     t_tree=terfind("t_tree");
     t_tree_young=terfind("t_tree_young");
     t_tree_apple=terfind("t_tree_apple");
+    t_tree_apple_harvested=terfind("t_tree_apple_harvested");
     t_tree_pear=terfind("t_tree_pear");
+    t_tree_pear_harvested=terfind("t_tree_pear_harvested");
     t_tree_cherry=terfind("t_tree_cherry");
+    t_tree_cherry_harvested=terfind("t_tree_cherry_harvested");
     t_tree_peach=terfind("t_tree_peach");
+    t_tree_peach_harvested=terfind("t_tree_peach_harvested");
     t_tree_apricot=terfind("t_tree_apricot");
+    t_tree_apricot_harvested=terfind("t_tree_apricot_harvested");
     t_tree_plum=terfind("t_tree_plum");
+    t_tree_plum_harvested=terfind("t_tree_plum_harvested");
     t_tree_pine=terfind("t_tree_pine");
     t_tree_deadpine=terfind("t_tree_deadpine");
     t_underbrush=terfind("t_underbrush");
@@ -577,6 +599,7 @@ void set_ter_ids() {
     t_shrub_fungal=terfind("t_shrub_fungal");
     t_tree_fungal=terfind("t_tree_fungal");
     t_tree_fungal_young=terfind("t_tree_fungal_young");
+    t_marloss_tree=terfind("t_marloss_tree");
     t_water_sh=terfind("t_water_sh");
     t_water_dp=terfind("t_water_dp");
     t_swater_sh=terfind("t_swater_sh");
@@ -855,4 +878,31 @@ void submap::delete_vehicles()
         delete veh;
     }
     vehicles.clear();
+}
+
+static const std::string COSMETICS_GRAFFITI( "GRAFFITI" );
+
+bool submap::has_graffiti( int x, int y ) const
+{
+    return cosmetics[x][y].count( COSMETICS_GRAFFITI ) > 0;
+}
+
+const std::string &submap::get_graffiti( int x, int y ) const
+{
+    const auto it = cosmetics[x][y].find( COSMETICS_GRAFFITI );
+    if( it == cosmetics[x][y].end() ) {
+        static const std::string empty_string;
+        return empty_string;
+    }
+    return it->second;
+}
+
+void submap::set_graffiti( int x, int y, const std::string &new_graffiti )
+{
+    cosmetics[x][y][COSMETICS_GRAFFITI] = new_graffiti;
+}
+
+void submap::delete_graffiti( int x, int y )
+{
+    cosmetics[x][y].erase( COSMETICS_GRAFFITI );
 }

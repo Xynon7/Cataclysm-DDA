@@ -159,14 +159,15 @@ struct mtype {
         unsigned char sk_dodge;    // Dodge skill; should be 0 to 5
         unsigned char armor_bash;  // Natural armor vs. bash
         unsigned char armor_cut;   // Natural armor vs. cut
-        std::string
-        death_drops;   // Name of item group that is used to create item dropped upon death, or empty
+        std::map<std::string, int> starting_ammo; // Amount of ammo the monster spawns with.
+        // Name of item group that is used to create item dropped upon death, or empty.
+        std::string death_drops;
         float luminance;           // 0 is default, >0 gives luminance to lightmap
         int hp;
-        unsigned int sp_freq;     // How long sp_attack takes to charge
+        std::vector<unsigned int> sp_freq;     // How long sp_attack takes to charge
         std::vector<void (mdeath::*)(monster *)> dies; // What happens when this monster dies
         unsigned int def_chance; // How likely a special "defensive" move is to trigger (0-100%, default 0)
-        void (mattack::*sp_attack)(monster *); // This monster's special attack
+        std::vector<void (mattack::*)(monster *, int index)> sp_attack; // This monster's special attack
         // This monster's special "defensive" move that may trigger when the monster is attacked.
         // Note that this can be anything, and is not necessarily beneficial to the monster
         void (mdefense::*sp_defense)(monster *, const projectile *);
@@ -178,6 +179,11 @@ struct mtype {
          * in both monster types fulfills that test.
          */
         bool same_species( const mtype &other ) const;
+        /**
+         * If this is not empty, the monster can be converted into an item
+         * of this type (if it's friendly).
+         */
+        itype_id revert_to_itype;
 
         // Used to fetch the properly pluralized monster type name
         std::string nname(unsigned int quantity = 1) const;

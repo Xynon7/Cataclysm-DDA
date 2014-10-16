@@ -5,6 +5,7 @@
 #include "game.h"
 #include "line.h"
 #include "options.h"
+#include "item_factory.h"
 #include "mapbuffer.h"
 #include "translations.h"
 #include "monstergenerator.h"
@@ -12,7 +13,6 @@
 #include <stdlib.h>
 #include <fstream>
 #include "debug.h"
-#include "item_factory.h"
 #include "messages.h"
 #include "mapsharing.h"
 
@@ -85,20 +85,34 @@ VehicleList map::get_vehicles(const int sx, const int sy, const int ex, const in
 
 vehicle* map::veh_at(const int x, const int y, int &part_num)
 {
- // This function is called A LOT. Move as much out of here as possible.
- if (!veh_in_active_range || !inbounds(x, y))
-  return NULL;    // Out-of-bounds - null vehicle
- if(!veh_exists_at[x][y])
-  return NULL;    // cache cache indicates no vehicle. This should optimize a great deal.
- std::pair<int,int> point(x,y);
- std::map< std::pair<int,int>, std::pair<vehicle*,int> >::iterator it;
- if ((it = veh_cached_parts.find(point)) != veh_cached_parts.end())
- {
-  part_num = it->second.second;
-  return it->second.first;
- }
- debugmsg ("vehicle part cache cache indicated vehicle not found: %d %d",x,y);
- return NULL;
+    // This function is called A LOT. Move as much out of here as possible.
+    if (!veh_in_active_range || !inbounds(x, y)) {
+        return NULL;    // Out-of-bounds - null vehicle
+    }
+    if(!veh_exists_at[x][y]) {
+        return NULL;    // cache cache indicates no vehicle. This should optimize a great deal.
+    }
+    std::pair<int,int> point(x,y);
+    std::map< std::pair<int,int>, std::pair<vehicle*,int> >::iterator it;
+    if ((it = veh_cached_parts.find(point)) != veh_cached_parts.end()) {
+        part_num = it->second.second;
+        return it->second.first;
+    }
+    debugmsg ("vehicle part cache cache indicated vehicle not found: %d %d",x,y);
+    return NULL;
+}
+
+point map::veh_part_coordinates(const int x, const int y)
+{
+    int part_num;
+    vehicle* veh = veh_at(x, y, part_num);
+
+    if(veh == nullptr) {
+        return point(0,0);
+    }
+
+    auto part = veh->parts[part_num];
+    return point(part.mount_dx, part.mount_dy);
 }
 
 vehicle* map::veh_at(const int x, const int y)
@@ -384,6 +398,8 @@ bool map::displace_vehicle (int &x, int &y, const int dx, const int dy, bool tes
             upd_y = psg->posy;
         }
     }
+
+    veh->shed_loose_parts();
     for (auto &p : veh->parts) {
         p.precalc_dx[0] = p.precalc_dx[1];
         p.precalc_dy[0] = p.precalc_dy[1];
@@ -438,8 +454,7 @@ void map::vehmove()
         for( size_t v = 0; v < vehs.size(); ++v ) {
             vehicle* veh = vehs[v].v;
             veh->gain_moves();
-            veh->power_parts();
-            veh->idle();
+            veh->slow_leak();
         }
     }
 
@@ -1055,6 +1070,13 @@ std::string map::get_ter_harvestable(const int x, const int y) const {
 }
 
 /*
+ * Get the terrain transforms_into id (what will the terrain transforms into)
+ */
+ter_id map::get_ter_transforms_into(const int x, const int y) const {
+    return (ter_id)termap[ terlist[ ter(x,y) ].transforms_into ].loadid;
+}
+
+/*
  * Get the harvest season from the terrain
  */
 int map::get_ter_harvest_season(const int x, const int y) const {
@@ -1213,20 +1235,12 @@ bool map::trans(const int x, const int y)
     }
     if( tertr ) {
         // Fields may obscure the view, too
-        field &curfield = field_at( x,y );
-        if( curfield.fieldCount() > 0 ) {
-            field_entry *cur = NULL;
-            for( auto field_list_it = curfield.getFieldStart();
-                 field_list_it != curfield.getFieldEnd(); ++field_list_it ) {
-                cur = field_list_it->second;
-                if( cur == NULL ) {
-                    continue;
-                }
+        const field &curfield = field_at( x,y );
+        for( auto &fld : curfield ) {
                 //If ANY field blocks vision, the tile does.
-                if(!fieldlist[cur->getFieldType()].transparent[cur->getFieldDensity() - 1]) {
+                if(!fieldlist[fld.second.getFieldType()].transparent[fld.second.getFieldDensity() - 1]) {
                     return false;
                 }
-            }
         }
         return true; //no blockers found, this is transparent
     }
@@ -1430,12 +1444,12 @@ int map::bash_rating(const int str, const int x, const int y)
     } else if ( ter_at(x, y).bash.str_max != -1 ) {
         ter_smash = true;
     }
-    
+
     if (!furn_smash && !ter_smash) {
     //There must be a vehicle there!
         return 10;
     }
-    
+
     int bash_min = 0;
     int bash_max = 0;
     if (furn_smash) {
@@ -1450,7 +1464,7 @@ int map::bash_rating(const int str, const int x, const int y)
     } else if (str >= bash_max) {
         return 10;
     }
-    
+
     return (10 * (str - bash_min)) / (bash_max - bash_min);
 }
 
@@ -1472,7 +1486,7 @@ void map::make_rubble(const int x, const int y, furn_id rubble_type, bool items,
         if (move_cost(x, y) <= 0) {
             ter_set(x, y, floor_type);
         }
-        
+
         furn_set(x, y, rubble_type);
     }
     if (items) {
@@ -1563,7 +1577,7 @@ bool map::moppable_items_at(const int x, const int y)
             return true;
         }
     }
-    field &fld = field_at(x, y);
+    const field &fld = field_at(x, y);
     if(fld.findField(fd_blood) != 0 || fld.findField(fd_blood_veggy) != 0 ||
           fld.findField(fd_blood_insect) != 0 || fld.findField(fd_blood_invertebrate) != 0
           || fld.findField(fd_bile) != 0 || fld.findField(fd_slime) != 0 ||
@@ -1620,7 +1634,7 @@ bool map::has_nearby_fire(int x, int y, int radius)
     for(int dx = -radius; dx <= radius; dx++) {
         for(int dy = -radius; dy <= radius; dy++) {
             const point p(x + dx, y + dy);
-            if (field_at(p.x, p.y).findField(fd_fire) != 0) {
+            if( get_field( p, fd_fire ) != nullptr ) {
                 return true;
             }
             if (ter(p.x, p.y) == t_lava) {
@@ -1639,14 +1653,13 @@ void map::mop_spills(const int x, const int y) {
             i--;
         }
     }
-    field &fld = field_at(x, y);
-    fld.removeField(fd_blood);
-    fld.removeField(fd_blood_veggy);
-    fld.removeField(fd_blood_insect);
-    fld.removeField(fd_blood_invertebrate);
-    fld.removeField(fd_bile);
-    fld.removeField(fd_slime);
-    fld.removeField(fd_sludge);
+    remove_field( x, y, fd_blood );
+    remove_field( x, y, fd_blood_veggy );
+    remove_field( x, y, fd_blood_insect );
+    remove_field( x, y, fd_blood_invertebrate );
+    remove_field( x, y, fd_bile );
+    remove_field( x, y, fd_slime );
+    remove_field( x, y, fd_sludge );
     int vpart;
     vehicle *veh = veh_at(x, y, vpart);
     if(veh != 0) {
@@ -1762,7 +1775,7 @@ std::pair<bool, bool> map::bash(const int x, const int y, const int str,
     int sound_volume = 0;
     std::string sound;
     bool smashed_something = false;
-    if (field_at(x, y).findField(fd_web)) {
+    if( get_field( point( x, y ), fd_web ) != nullptr ) {
         smashed_something = true;
         remove_field(x, y, fd_web);
     }
@@ -2029,7 +2042,14 @@ void map::spawn_item_list(const std::vector<map_bash_item_drop> &items, int x, i
                     new_item.charges = numitems;
                     numitems = 1;
                 }
+                const bool varsize = new_item.has_flag( "VARSIZE" );
                 for(int a = 0; a < numitems; a++ ) {
+                    if( varsize && one_in( 3 ) ) {
+                        new_item.item_tags.insert( "FIT" );
+                    } else if( varsize ) {
+                        // might have been added previously
+                        new_item.item_tags.erase( "FIT" );
+                    }
                     add_item_or_charges(x, y, new_item);
                 }
             }
@@ -2154,6 +2174,7 @@ void map::shoot(const int x, const int y, int &dam,
         }
     } else if( 0 == terrain.id.compare("t_door_c") ||
                0 == terrain.id.compare("t_door_locked") ||
+               0 == terrain.id.compare("t_door_locked_peep") ||
                0 == terrain.id.compare("t_door_locked_alarm") ) {
         dam -= rng(15, 30);
         if (dam > 0) {
@@ -2330,8 +2351,8 @@ void map::shoot(const int x, const int y, int &dam,
     }
 
     // Check fields?
-    field_entry *fieldhit = field_at(x, y).findField(fd_web);
-    if(fieldhit){
+    const field_entry *fieldhit = get_field( point( x, y ), fd_web );
+    if( fieldhit != nullptr ) {
         if (ammo_effects.count("INCENDIARY") || ammo_effects.count("FLAME")) {
             add_field(x, y, fd_fire, fieldhit->getFieldDensity() - 1);
         } else if (dam > 5 + fieldhit->getFieldDensity() * 5 &&
@@ -2377,7 +2398,7 @@ bool map::hit_with_acid( const int x, const int y )
     if( t == t_wall_glass_v || t == t_wall_glass_h || t == t_wall_glass_v_alarm || t == t_wall_glass_h_alarm ||
         t == t_vat ) {
         ter_set( x, y, t_floor );
-    } else if( t == t_door_c || t == t_door_locked || t == t_door_locked_alarm ) {
+    } else if( t == t_door_c || t == t_door_locked || t == t_door_locked_peep || t == t_door_locked_alarm ) {
         if( one_in( 3 ) ) {
             ter_set( x, y, t_door_b );
         }
@@ -2808,12 +2829,6 @@ void map::spawn_an_item(const int x, const int y, item new_item,
     {
         new_item.damage = damlevel;
     }
-
-    // clothing with variable size flag may sometimes be generated fitted
-    if (new_item.is_armor() && new_item.has_flag("VARSIZE") && one_in(3))
-    {
-        new_item.item_tags.insert("FIT");
-    }
     add_item_or_charges(x, y, new_item);
 }
 
@@ -2827,11 +2842,6 @@ void map::spawn_items(const int x, const int y, const std::vector<item> &new_ite
         item new_item = *a;
         if (new_item.made_of(LIQUID) && swimmable) {
             continue;
-        }
-        // clothing with variable size flag may sometimes be generated fitted
-        if (new_item.is_armor() && new_item.has_flag("VARSIZE") && one_in(3))
-        {
-            new_item.item_tags.insert("FIT");
         }
         if (new_item.is_armor() && new_item.has_flag("PAIRED") && x_in_y(4, 5)) {
             //Clear old side info
@@ -2889,6 +2899,9 @@ void map::spawn_item(const int x, const int y, const std::string &type_id,
     if(type_id == "null") {
         return;
     }
+    if(item_is_blacklisted(type_id)) {
+        return;
+    }
     // recurse to spawn (quantity - 1) items
     for(unsigned i = 1; i < quantity; i++)
     {
@@ -2896,6 +2909,9 @@ void map::spawn_item(const int x, const int y, const std::string &type_id,
     }
     // spawn the item
     item new_item(type_id, birthday, rand);
+    if( one_in( 3 ) && new_item.has_flag( "VARSIZE" ) ) {
+        new_item.item_tags.insert( "FIT" );
+    }
     spawn_an_item(x, y, new_item, charges, damlevel);
 }
 
@@ -2966,7 +2982,8 @@ bool map::add_item_or_charges(const int x, const int y, item new_item, int overf
 
         return false;
     }
-    if( (new_item.made_of(LIQUID) && has_flag("SWIMMABLE", x, y)) || has_flag("DESTROY_ITEM", x, y) ) {
+    if( (new_item.made_of(LIQUID) && has_flag("SWIMMABLE", x, y)) ||
+            has_flag("DESTROY_ITEM", x, y) || new_item.has_flag("NO_DROP") ) {
         // Silently fail on mundane things that prevent item spawn.
         return false;
     }
@@ -3015,8 +3032,7 @@ void map::add_item(const int x, const int y, item new_item, const int maxitems)
     if (has_flag("DESTROY_ITEM", x, y) || ((int)i_at(x,y).size() >= maxitems)) {
         return;
     }
-    field &fld = field_at(x, y);
-    if (new_item.has_flag("ACT_IN_FIRE") && (fld.findField(fd_fire) != 0)) {
+    if (new_item.has_flag("ACT_IN_FIRE") && get_field( point( x, y ), fd_fire ) != nullptr ) {
         new_item.active = true;
     }
 
@@ -3043,7 +3059,7 @@ static void apply_in_fridge(item &it)
             it.item_tags.insert("COLD");
             it.active = true;
         }
-		if ((it.has_flag("COLD")) && (it.item_counter <= 590) && it.fridge > 0) {
+        if ((it.has_flag("COLD")) && (it.item_counter <= 590) && it.fridge > 0) {
             it.item_counter += 10;
         }
     }
@@ -3615,31 +3631,36 @@ void map::remove_trap(const int x, const int y)
 /*
  * Get wrapper for all fields at xy
  */
-field& map::field_at(const int x, const int y)
+const field &map::field_at( const int x, const int y ) const
 {
- if (!INBOUNDS(x, y)) {
-  nulfield = field();
-  return nulfield;
- }
+    if( !inbounds( x, y ) ) {
+        nulfield = field();
+        return nulfield;
+    }
 
- int lx, ly;
- submap * const current_submap = get_submap_at(x, y, lx, ly);
+    int lx, ly;
+    submap *const current_submap = get_submap_at( x, y, lx, ly );
 
- return current_submap->fld[lx][ly];
+    return current_submap->fld[lx][ly];
 }
 
-/*
- * Increment/decrement age of field type at point.
- * returns resulting age or -1 if not present.
- */
+field &map::get_field( const int x, const int y )
+{
+    if( !inbounds( x, y ) ) {
+        nulfield = field();
+        return nulfield;
+    }
+
+    int lx, ly;
+    submap *const current_submap = get_submap_at( x, y, lx, ly );
+
+    return current_submap->fld[lx][ly];
+}
+
 int map::adjust_field_age(const point p, const field_id t, const int offset) {
     return set_field_age( p, t, offset, true);
 }
 
-/*
- * Increment/decrement strength of field type at point, creating if not present, removing if strength becomes 0
- * returns resulting strength, or 0 for not present
- */
 int map::adjust_field_strength(const point p, const field_id t, const int offset) {
     return set_field_strength(p, t, offset, true);
 }
@@ -3679,25 +3700,16 @@ int map::set_field_strength(const point p, const field_id t, const int str, bool
     return 0;
 }
 
-/*
- * get age of field type at point. -1 = not present
- */
 int map::get_field_age( const point p, const field_id t ) {
     field_entry * field_ptr = get_field( p, t );
     return ( field_ptr == NULL ? -1 : field_ptr->getFieldAge() );
 }
 
-/*
- * get strength of field type at point. 0 = not present
- */
 int map::get_field_strength( const point p, const field_id t ) {
     field_entry * field_ptr = get_field( p, t );
     return ( field_ptr == NULL ? 0 : field_ptr->getFieldDensity() );
 }
 
-/*
- * get field type at point. NULL if not present
- */
 field_entry * map::get_field( const point p, const field_id t ) {
     if (!INBOUNDS(p.x, p.y))
         return NULL;
@@ -3706,9 +3718,6 @@ field_entry * map::get_field( const point p, const field_id t ) {
     return current_submap->fld[lx][ly].findField(t);
 }
 
-/*
- * add field type at point, or set density if present
- */
 bool map::add_field(const point p, const field_id t, int density, const int age)
 {
     if (!INBOUNDS(p.x, p.y)) {
@@ -3725,30 +3734,22 @@ bool map::add_field(const point p, const field_id t, int density, const int age)
     int lx, ly;
     submap * const current_submap = get_submap_at(p.x, p.y, lx, ly);
 
-    if (!current_submap->fld[lx][ly].findField(t)) {
+    if( current_submap->fld[lx][ly].addField( t, density, age ) ) {
         // TODO: Update overall field_count appropriately.
         // This is the spirit of "fd_null" that it used to be.
         current_submap->field_count++; //Only adding it to the count if it doesn't exist.
     }
-    current_submap->fld[lx][ly].addField(t, density, age); //This will insert and/or update the field.
     if(g != NULL && this == &g->m && p.x == g->u.posx && p.y == g->u.posy) {
         step_in_field(p.x, p.y); //Hit the player with the field if it spawned on top of them.
     }
     return true;
 }
 
-/*
- * add field type at xy, or set denity if present
- */
 bool map::add_field(const int x, const int y, const field_id t, const int new_density)
 {
     return this->add_field(point(x,y), t, new_density, 0);
 }
 
-
-/*
- * remove field type at xy
- */
 void map::remove_field(const int x, const int y, const field_id field_to_remove)
 {
  if (!INBOUNDS(x, y)) {
@@ -3954,7 +3955,7 @@ void map::drawsq(WINDOW* w, player &u, const int x, const int y, const bool inve
     const ter_id curr_ter = ter(x,y);
     const furn_id curr_furn = furn(x,y);
     const trap_id curr_trap = tr_at(x, y);
-    field &curr_field = field_at(x, y);
+    const field &curr_field = field_at(x, y);
     const std::vector<item> &curr_items = i_at(x, y);
     long sym;
     bool hi = false;
@@ -4049,7 +4050,7 @@ void map::drawsq(WINDOW* w, player &u, const int x, const int y, const bool inve
         tercol = veh->part_color(veh_part);
     }
     // If there's graffiti here, change background color
-    if(graffiti_at(x,y).contents) {
+    if( has_graffiti_at( x, y ) ) {
         graf = true;
     }
 
@@ -4569,6 +4570,7 @@ void map::saven( const int worldx, const int worldy, const int worldz,
     const int abs_x = worldx + gridx;
     const int abs_y = worldy + gridy;
     dbg( D_INFO ) << "map::saven abs_x: " << abs_x << "  abs_y: " << abs_y;
+    submap_to_save->turn_last_touched = int(calendar::turn);
     MAPBUFFER.add_submap( abs_x, abs_y, worldz, submap_to_save );
 }
 
@@ -4664,17 +4666,16 @@ void map::loadn(const int worldx, const int worldy, const int worldz,
               if (it->is_corpse()) {
                   it->calc_rot(point(x,y));
 
-                  //remove corpse after 10 days = 144000 turns (dependent on temperature)
-                  if(it->rot > 144000 && it->can_revive() == false) {
+                  //remove corpse after 10 days (dependent on temperature)
+                  if(it->get_rot() > DAYS( 10 ) && !it->can_revive() ) {
                       it = tmpsub->itm[x][y].erase(it);
                   } else { ++it; intidx++; }
 
                   continue;
               }
               if(it->goes_bad() && biggest_container_idx != intidx) { // you never know...
-                  it_comest *food = dynamic_cast<it_comest*>(it->type);
                   it->calc_rot(point(x,y));
-                  if(it->rot >= (int)(food->spoils * 600)*2) {
+                  if( it->has_rotten_away() ) {
                       it = tmpsub->itm[x][y].erase(it);
                   } else { ++it; intidx++; }
               } else { ++it; intidx++; }
@@ -4690,9 +4691,9 @@ void map::loadn(const int worldx, const int worldy, const int worldz,
   }
 
   // plantEpoch is half a season; 3 epochs pass from plant to harvest
-  const int plantEpoch = 14400 * (int)ACTIVE_WORLD_OPTIONS["SEASON_LENGTH"] / 2;
+  const int plantEpoch = 14400 * int(calendar::season_length()) / 2;
 
-  // check plants
+  // check plants for crops and seasonal harvesting.
   for (int x = 0; x < SEEX; x++) {
     for (int y = 0; y < SEEY; y++) {
       furn_id furn = tmpsub->get_furn(x, y);
@@ -4710,9 +4711,16 @@ void map::loadn(const int worldx, const int worldy, const int worldz,
 
           // fixme; Lazy farmer drop rake on dirt mound. What happen rake?!
           tmpsub->itm[x][y].resize(1);
-
           tmpsub->itm[x][y][0].bday = seed.bday;
           tmpsub->set_furn(x, y, furn);
+        }
+      }
+      ter_id ter = tmpsub->ter[x][y];
+      //if the fruit-bearing season of the already harvested terrain has passed, make it harvestable again
+      if ((ter) && (terlist[ter].has_flag(TFLAG_HARVESTED))){
+        if ((terlist[ter].harvest_season != calendar::turn.get_season()) || 
+        (calendar::turn - tmpsub->turn_last_touched > calendar::season_length()*14400)){
+          tmpsub->set_ter(x, y, terfind(terlist[ter].transforms_into));
         }
       }
     }
@@ -4730,6 +4738,9 @@ void map::loadn(const int worldx, const int worldy, const int worldz,
         }
     }
   }
+
+  tmpsub->turn_last_touched = int(calendar::turn); // the last time we touched the submap, is right now.
+
  } else { // It doesn't exist; we must generate it!
   dbg(D_INFO|D_WARNING) << "map::loadn: Missing mapbuffer data. Regenerating.";
   tinymap tmp_map;
@@ -4774,26 +4785,79 @@ void map::copy_grid(const int to, const int from)
     }
 }
 
-void map::spawn_monsters()
+void map::spawn_monsters( int gx, int gy, mongroup &group, bool ignore_sight )
+{
+    const int s_range = std::min(SEEX * (MAPSIZE / 2), g->u.sight_range( g->light_level() ) );
+    int pop = group.population;
+    std::vector<point> locations;
+    if( !ignore_sight ) {
+        // If the submap is one of the outermost submaps, assume that monsters are
+        // invisible there.
+        // When the map shifts because of the player moving (called from game::plmove),
+        // the player has still their *old* (not shifted) coordinates.
+        // That makes the submaps that have come into view visible (if the sight range
+        // is big enough).
+        if( gx == 0 || gy == 0 || gx + 1 == MAPSIZE || gy + 1 == MAPSIZE ) {
+            ignore_sight = true;
+        }
+    }
+    for( int x = 0; x < SEEX; ++x ) {
+        for( int y = 0; y < SEEY; ++y ) {
+            int fx = x + SEEX * gx;
+            int fy = y + SEEY * gy;
+            if( g->critter_at( fx, fy ) != nullptr ) {
+                continue; // there is already some creature
+            }
+            if( move_cost( fx, fy ) == 0 ) {
+                continue; // solid area, impassable
+            }
+            int t;
+            if( !ignore_sight && sees( g->u.posx, g->u.posy, fx, fy, s_range, t ) ) {
+                continue; // monster must spawn outside the viewing range of the player
+            }
+            if( has_flag_ter_or_furn( TFLAG_INDOORS, fx, fy ) ) {
+                continue; // monster must spawn outside.
+            }
+            locations.push_back( point( fx, fy ) );
+        }
+    }
+    if( locations.empty() ) {
+        // TODO: what now? there is now possible place to spawn monsters, most
+        // likely because the player can see all the places.
+        dbg( D_ERROR ) << "Empty locations for group " << group.type << " at " << gx << "," << gy;
+        return;
+    }
+    for( int m = 0; m < pop; m++ ) {
+        MonsterGroupResult spawn_details = MonsterGroupManager::GetResultFromGroup( group.type, &pop );
+        if( spawn_details.name == "mon_null" ) {
+            continue;
+        }
+        monster tmp( GetMType( spawn_details.name ) );
+        for( int i = 0; i < spawn_details.pack_size; i++) {
+            for( int tries = 0; tries < 10 && !locations.empty(); tries++ ) {
+                const size_t index = rng( 0, locations.size() - 1 );
+                const point p = locations[index];
+                if( !tmp.can_move_to( p.x, p.y ) ) {
+                    continue; // target can not contain the monster
+                }
+                tmp.spawn( p.x, p.y );
+                g->add_zombie( tmp );
+                locations.erase( locations.begin() + index );
+                break;
+            }
+        }
+    }
+    // indicates the group is empty, and can be removed later
+    group.population = 0;
+}
+
+void map::spawn_monsters(bool ignore_sight)
 {
     for (int gx = 0; gx < my_MAPSIZE; gx++) {
         for (int gy = 0; gy < my_MAPSIZE; gy++) {
             auto groups = overmap_buffer.groups_at( abs_sub.x + gx, abs_sub.y + gy, abs_sub.z );
             for( auto &mgp : groups ) {
-                int group = mgp->population;
-                for( int g = 0; g < group; g++ ) {
-                    MonsterGroupResult spawn_details = MonsterGroupManager::GetResultFromGroup( mgp->type, &group );
-                    if( spawn_details.name == "mon_null" ) {
-                        continue;
-                    }
-                    // Spawn points can be added everywhere, the actual spawn code
-                    // places the monster at a suitable point.
-                    int monx = rng( 0, SEEX - 1 ) + SEEX * gx;
-                    int mony = rng( 0, SEEY - 1 ) + SEEY * gy;
-                    add_spawn( spawn_details.name, spawn_details.pack_size, monx, mony );
-                }
-                // indicates the group is empty, and can be removed later
-                mgp->population = 0;
+                spawn_monsters( gx, gy, *mgp, ignore_sight );
             }
 
             submap * const current_submap = get_submap_at_grid(gx, gy);
@@ -4871,31 +4935,50 @@ const std::set<point> &map::trap_locations(trap_id t) const
     return empty_set;
 }
 
-bool map::inbounds(const int x, const int y)
+bool map::inbounds(const int x, const int y) const
 {
  return (x >= 0 && x < SEEX * my_MAPSIZE && y >= 0 && y < SEEY * my_MAPSIZE);
 }
 
-bool map::add_graffiti(int x, int y, std::string contents)
+void map::set_graffiti( int x, int y, const std::string &contents )
 {
-  int lx, ly;
-  submap * const current_submap = get_submap_at(x, y, lx, ly);
-  current_submap->set_graffiti(lx, ly, graffiti(contents));
-  return true;
+    if( !inbounds( x, y ) ) {
+        return;
+    }
+    int lx, ly;
+    submap *const current_submap = get_submap_at( x, y, lx, ly );
+    current_submap->set_graffiti( lx, ly, contents );
 }
 
-graffiti map::graffiti_at(int x, int y)
+void map::delete_graffiti( int x, int y )
 {
- if (!inbounds(x, y))
-  return graffiti();
-/*
- int nonant;
- cast_to_nonant(x, y, nonant);
-*/
- int lx, ly;
- submap * const current_submap = get_submap_at(x, y, lx, ly);
+    if( !inbounds( x, y ) ) {
+        return;
+    }
+    int lx, ly;
+    submap *const current_submap = get_submap_at( x, y, lx, ly );
+    current_submap->delete_graffiti( lx, ly );
+}
 
- return current_submap->get_graffiti(lx, ly);
+const std::string &map::graffiti_at( int x, int y ) const
+{
+    if( !inbounds( x, y ) ) {
+        static const std::string empty_string;
+        return empty_string;
+    }
+    int lx, ly;
+    submap *const current_submap = get_submap_at( x, y, lx, ly );
+    return current_submap->get_graffiti( lx, ly );
+}
+
+bool map::has_graffiti_at( int x, int y ) const
+{
+    if( !inbounds( x, y ) ) {
+        return false;
+    }
+    int lx, ly;
+    submap *const current_submap = get_submap_at( x, y, lx, ly );
+    return current_submap->has_graffiti( lx, ly );
 }
 
 long map::determine_wall_corner(const int x, const int y, const long orig_sym)
@@ -5025,16 +5108,9 @@ void map::build_transparency_cache()
                 continue;
             }
 
-            field &curfield = field_at(x,y);
-            if(curfield.fieldCount() > 0){
-                field_entry *cur = NULL;
-                for( auto field_list_it = curfield.getFieldStart();
-                     field_list_it != curfield.getFieldEnd(); ++field_list_it ) {
-                    cur = field_list_it->second;
-                    if(cur == NULL) {
-                        continue;
-                    }
-
+            const field &curfield = field_at(x,y);
+            for( auto &fld : curfield ) {
+                const field_entry * cur = &fld.second;
                     if( !fieldlist[cur->getFieldType()].transparent[cur->getFieldDensity() - 1] ) {
                         // Fields are either transparent or not, however we want some to be translucent
                         switch(cur->getFieldType()) {
@@ -5065,7 +5141,6 @@ void map::build_transparency_cache()
                         }
                     }
                     // TODO: [lightmap] Have glass reduce light as well
-                }
             }
         }
     }
