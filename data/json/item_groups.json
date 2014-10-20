@@ -1892,7 +1892,8 @@
       ["misc_repairkit", 5],
       ["tool_belt", 30],
       ["knitting_needles", 1],
-      ["survnote", 1]
+      ["survnote", 1],
+      ["material_quicklime", 10]
     ]
   },{
     "type" : "item_group",
@@ -3490,6 +3491,7 @@
       ["mobile_memory_card", 6],
       ["laptop", 2],
       ["badge_deputy", 5],
+      ["badge_detective", 5],
       ["gloves_leather", 45],
       ["gloves_tactical", 10],
       ["tac_helmet", 15],
@@ -7293,7 +7295,8 @@
       ["survnote", 1],
       ["toolbox", 1],
       ["diazepam", 1],
-      ["magnifying_glass", 1]
+      ["magnifying_glass", 1],
+      ["material_quicklime", 10]
     ]
   },{
     "type" : "item_group",
@@ -8564,7 +8567,8 @@
       ["bullwhip", 30],
       ["distaff_spindle", 2],
       ["carding_paddles", 2],
-      ["scythe", 40]
+      ["scythe", 40],
+      ["material_quicklime", 30]
     ]
   },{
 "type" : "item_group",
