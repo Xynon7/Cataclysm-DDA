@@ -195,7 +195,6 @@ class game
         void clear_zombies();
         bool spawn_hallucination(); //Spawns a hallucination close to the player
 
-        Creature *creature_at(const int x, const int y);
         int  mon_at(const int x, const int y) const; // Index of the monster at (x, y); -1 for none
         int  mon_at(point p) const;
         bool is_empty(const int x, const int y); // True if no PC, no monster, move cost > 0
@@ -396,8 +395,6 @@ class game
         std::vector<item> items_dragged;
         int weight_dragged; // Computed once, when you start dragging
 
-        std::map<int, std::map<int, bool> > mapRain;
-
         int ter_view_x, ter_view_y;
         WINDOW *w_terrain;
         WINDOW *w_overmap;
@@ -462,8 +459,7 @@ class game
         void draw_weather(weather_printable wPrint);
         void draw_sct();
         void draw_zones(const point &p_pointStart, const point &p_pointEnd, const point &p_pointOffset);
-        // Draw critter (if visible!) on its current position into w_terrain,
-        // also update mapRain to protect it from been overdrawn by rain.
+        // Draw critter (if visible!) on its current position into w_terrain.
         // @param center the center of view, same as when calling map::draw
         void draw_critter(const Creature &critter, const point &center);
 

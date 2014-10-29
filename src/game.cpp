@@ -194,8 +194,6 @@ void game::load_core_data()
     // core data can be loaded only once and must be first
     // anyway.
     DynamicDataLoader::get_instance().unload_data();
-    // Special handling for itypes created in itypedef.cpp
-    item_controller->init_old();
 
     load_data_from_dir(FILENAMES["jsondir"]);
 }
@@ -951,7 +949,7 @@ void game::cleanup_at_end()
         if (!sLastWords.empty()) {
             u.add_memorial_log( _("Last words: %s"), sLastWords.c_str(), _("Last words: %s"), sLastWords.c_str() );
         }
-        save_player_data();
+        // Struck the save_player_data here to forestall Weirdness
         move_save_to_graveyard();
         write_memorial_file(sLastWords);
         u.memorial_log.clear();
@@ -1370,7 +1368,7 @@ bool game::do_turn()
             u.hurtall(1);
         }
 
-        if (u.radiation > 1 && one_in(3)) {
+        if (u.radiation > 0 && one_in(3)) {
             u.radiation--;
         }
         u.get_sick();
@@ -2966,11 +2964,21 @@ input_context game::get_player_input(std::string &action)
 
                 wPrint.vdrops.clear();
 
+
+                const int light_sight_range = u.sight_range( g->light_level() );
                 for (int i = 0; i < dropCount; i++) {
                     const int iRandX = rng(iStartX, iEndX - 1);
                     const int iRandY = rng(iStartY, iEndY - 1);
+                    const int mapx = iRandX + offset_x;
+                    const int mapy = iRandY + offset_y;
+                    const int distance = rl_dist( u.posx, u.posy, mapx, mapy );
 
-                    if (mapRain[iRandY][iRandX]) {
+                    if( m.is_outside( mapx, mapy ) &&
+                        ( m.light_at( mapx, mapy ) > LL_LOW ||
+                          distance <= light_sight_range ) &&
+                        m.pl_sees( u.posx, u.posy, mapx, mapy, distance ) &&
+                        !critter_at(mapx, mapy) ) {
+                        // Supress if a critter is there
                         wPrint.vdrops.push_back(std::make_pair(iRandX, iRandY));
                     }
                 }
@@ -5507,7 +5515,6 @@ void game::draw_critter(const Creature &critter, const point &center)
     }
     if( u.sees( &critter ) || &critter == &u ) {
         critter.draw( w_terrain, center.x, center.y, false );
-        mapRain[my][mx] = false;
         return;
     }
     const bool has_ir = u.has_active_bionic( "bio_infrared" ) ||
@@ -5518,13 +5525,11 @@ void game::draw_critter(const Creature &critter, const point &center)
                                     u.sight_range( DAYLIGHT_LEVEL ) );
     if( critter.is_warm() && has_ir && can_see ) {
         mvwputch( w_terrain, my, mx, c_red, '?' );
-        mapRain[my][mx] = false;
     }
 }
 
 void game::draw_ter(int posx, int posy)
 {
-    mapRain.clear();
     // posx/posy default to -999
     if (posx == -999) {
         posx = u.posx + u.view_offset_x;
@@ -7934,8 +7939,8 @@ bool game::refill_vehicle_part(vehicle &veh, vehicle_part *part, bool test)
     if (!part_info.has_flag("FUEL_TANK")) {
         return false;
     }
-    item *it = NULL;
-    item *p_itm = NULL;
+    item *it = nullptr; // the container or the fuel item,
+    item *p_itm = nullptr; // always the actual fuel item
     long min_charges = -1;
     bool in_container = false;
 
@@ -7964,7 +7969,8 @@ bool game::refill_vehicle_part(vehicle &veh, vehicle_part *part, bool test)
             min_charges = p_itm->charges;
         }
     }
-    if (p_itm->is_null() || it->is_null()) {
+    // Check for p_itm->type->id == itid is already done above
+    if( p_itm == nullptr || it->is_null()) {
         return false;
     } else if (test) {
         return true;
@@ -9573,11 +9579,10 @@ bool game::list_items_match(item &item, std::string sPattern)
             if (adv_pat_type == "c" && lcmatch(item.get_category().name, adv_pat_search)) {
                 return !exclude;
             } else if (adv_pat_type == "m") {
-                if (lcmatch(item.get_material(1)->name(), adv_pat_search)) {
-                    return !exclude;
-                }
-                if (lcmatch(item.get_material(2)->name(), adv_pat_search)) {
-                    return !exclude;
+                for (auto material : item.made_of_types()) {
+                    if (lcmatch(material->name(), adv_pat_search)) {
+                        return !exclude;
+                    }
                 }
             } else if (adv_pat_type == "dgt" && item.damage > atoi(adv_pat_search.c_str())) {
                 return !exclude;
@@ -10659,72 +10664,18 @@ bool game::handle_liquid(item &liquid, bool from_ground, bool infinite, item *so
         return true;
 
     } else { // filling up normal containers
-        LIQUID_FILL_ERROR error;
-        int remaining_capacity = cont->get_remaining_capacity_for_liquid(liquid, error);
-        if (remaining_capacity <= 0) {
-            switch (error) {
-            case L_ERR_NO_MIX:
-                add_msg(m_info, _("You can't mix loads in your %s."), cont->tname().c_str());
-                break;
-            case L_ERR_NOT_CONTAINER:
-                add_msg(m_info, _("That %s won't hold %s."), cont->tname().c_str(), liquid.tname().c_str());
-                break;
-            case L_ERR_NOT_WATERTIGHT:
-                add_msg(m_info, _("That %s isn't water-tight."), cont->tname().c_str());
-                break;
-            case L_ERR_NOT_SEALED:
-                add_msg(m_info, _("You can't seal that %s!"), cont->tname().c_str());
-                break;
-            case L_ERR_FULL:
-                add_msg(m_info, _("Your %s can't hold any more %s."), cont->tname().c_str(),
-                        liquid.tname().c_str());
-                break;
-            default:
-                break;
-            }
+        std::string err;
+        if( !cont->fill_with( liquid, err ) ) {
+            add_msg( m_info, err.c_str() );
             return false;
         }
 
-        if (!cont->contents.empty()) {
-            // Container is partly full
-            if (infinite) {
-                cont->contents[0].charges += remaining_capacity;
-                add_msg(_("You pour %s into the %s."), liquid.tname().c_str(), cont->tname().c_str());
-                return true;
-            } else { // Container is finite, not empty and not full, add liquid to it
-                add_msg(_("You pour %s into the %s."), liquid.tname().c_str(), cont->tname().c_str());
-                if (remaining_capacity > liquid.charges) {
-                    remaining_capacity = liquid.charges;
-                }
-                cont->contents[0].charges += remaining_capacity;
-                liquid.charges -= remaining_capacity;
-                if (liquid.charges > 0) {
-                    add_msg(_("There's some left over!"));
-                    // Why not try to find another container here?
-                    return false;
-                }
-                return true;
-            }
-        } else {
-            // pouring into a valid empty container
-            item liquid_copy = liquid;
-            bool all_poured = true;
-            if (infinite) { // if filling from infinite source, top it to max
-                liquid_copy.charges = remaining_capacity;
-                add_msg(_("You pour %s into the %s."), liquid.tname().c_str(), cont->tname().c_str());
-            } else if (liquid.charges > remaining_capacity) {
-                add_msg(_("You fill the %s with some of the %s."), cont->tname().c_str(),
-                        liquid.tname().c_str());
-                u.inv.unsort();
-                liquid.charges -= remaining_capacity;
-                liquid_copy.charges = remaining_capacity;
-                all_poured = false;
-            } else {
-                add_msg(_("You pour %s into the %s."), liquid.tname().c_str(), cont->tname().c_str());
-            }
-            cont->put_in(liquid_copy);
-            return all_poured;
+        u.inv.unsort();
+        add_msg( _( "You pour %s into the %s." ), liquid.tname().c_str(), cont->tname().c_str() );
+        if( !infinite && liquid.charges > 0 ) {
+            add_msg( _( "There's some left over!" ) );
         }
+        return infinite || liquid.charges <= 0;
     }
     return false;
 }
@@ -14052,7 +14003,7 @@ void game::update_stair_monsters()
             }
         }
         // Randomize the stair choice
-        si = nearest[one_in(found)];
+        si = nearest[rng( 0, found - 1 )];
 
         // Attempt to spawn zombies.
         for (size_t i = 0; i < coming_to_stairs.size(); i++) {
