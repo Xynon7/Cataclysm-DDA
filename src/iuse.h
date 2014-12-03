@@ -104,6 +104,8 @@ public:
     int siphon              (player *, item *, bool, point);
     int chainsaw_off        (player *, item *, bool, point);
     int chainsaw_on         (player *, item *, bool, point);
+    int elec_chainsaw_off   (player *, item *, bool, point);
+    int elec_chainsaw_on    (player *, item *, bool, point);
     int cs_lajatang_off     (player *, item *, bool, point);
     int cs_lajatang_on      (player *, item *, bool, point);
     int carver_off          (player *, item *, bool, point);
@@ -162,6 +164,8 @@ public:
     int vortex              (player *, item *, bool, point);
     int dog_whistle         (player *, item *, bool, point);
     int vacutainer          (player *, item *, bool, point);
+    static bool valid_to_cut_up(item *it);
+    static int cut_up(player *p, item *it, item *cut, bool);
     int knife               (player *, item *, bool, point);
     static int cut_log_into_planks(player *p, item *it);
     int lumber              (player *, item *, bool, point);
@@ -182,6 +186,7 @@ public:
     int heatpack            (player *, item *, bool, point);
     int hotplate            (player *, item *, bool, point);
     int flask_yeast         (player *, item *, bool, point);
+    int tanning_hide        (player *, item *, bool, point);
     int quiver              (player *, item *, bool, point);
     int boots               (player *, item *, bool, point);
     int sheath_sword        (player *, item *, bool, point);
@@ -200,6 +205,7 @@ public:
     int oxygen_bottle       (player *, item *, bool, point);
     int atomic_battery      (player *, item *, bool, point);
     int ups_battery         (player *, item *, bool, point);
+    int remove_all_mods     (player *, item *, bool, point);
     int fishing_rod         (player *, item *, bool, point);
     int fish_trap           (player *, item *, bool, point);
     int gun_repair          (player *, item *, bool, point);
@@ -214,6 +220,8 @@ public:
     int camera              (player *, item *, bool, point);
     int ehandcuffs          (player *, item *, bool, point);
     int cable_attach        (player *, item *, bool, point);
+    int weather_tool        (player *, item *, bool, point);
+    int survivor_belt       (player *, item *, bool, point);
 
 // MACGUFFINS
     int mcg_note            (player *, item *, bool, point);
@@ -223,6 +231,8 @@ public:
     int radiocontrol(player *, item *, bool, point);
 
     int multicooker(player *, item *, bool, point);
+
+    int remoteveh(player *, item *, bool, point);
 
 // ARTIFACTS
     /* This function is used when an artifact is activated.

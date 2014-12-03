@@ -5,7 +5,7 @@
 #include "json.h"
 #include "path_info.h"
 #include "monstergenerator.h"
-#include "item_factory.h"
+#include "item.h"
 #include "veh_type.h"
 #include <fstream>
 
@@ -609,18 +609,23 @@ void cata_tiles::get_window_tile_counts(const int width, const int height, int &
     rows = ceil((double) height / tile_height);
 }
 
-bool cata_tiles::draw_from_id_string(const std::string &id, int x, int y, int subtile, int rota)
+bool cata_tiles::draw_from_id_string(std::string id, int x, int y, int subtile, int rota)
 {
     return cata_tiles::draw_from_id_string(id, C_NONE, empty_string, x, y, subtile, rota);
 }
 
-bool cata_tiles::draw_from_id_string(const std::string &id, TILE_CATEGORY category, const std::string &subcategory, int x, int y, int subtile, int rota)
+bool cata_tiles::draw_from_id_string(std::string id, TILE_CATEGORY category,
+                                     const std::string &subcategory, int x, int y,
+                                     int subtile, int rota)
 {
-    // For the moment, if the ID string does not produce a drawable tile it will revert to the "unknown" tile.
+    // If the ID string does not produce a drawable tile
+    // it will revert to the "unknown" tile.
     // The "unknown" tile is one that is highly visible so you kinda can't miss it :D
 
-    // check to make sure that we are drawing within a valid area [0->width|height / tile_width|height]
-    if (x - o_x < 0 || x - o_x >= screentile_width || y - o_y < 0 || y - o_y >= screentile_height) {
+    // check to make sure that we are drawing within a valid area
+    // [0->width|height / tile_width|height]
+    if( x - o_x < 0 || x - o_x >= screentile_width ||
+        y - o_y < 0 || y - o_y >= screentile_height ) {
         return false;
     }
 
@@ -640,11 +645,11 @@ bool cata_tiles::draw_from_id_string(const std::string &id, TILE_CATEGORY catego
         break;
     }
     tile_id_iterator it = tile_ids.find(seasonal_id);
-    if (it != tile_ids.end()) {
-        return draw_from_id_string(seasonal_id, category, subcategory, x, y, subtile, rota);
+    if (it == tile_ids.end()) {
+        it = tile_ids.find(id);
+    } else {
+        id = seasonal_id;
     }
-
-    it = tile_ids.find(id);
 
     if (it == tile_ids.end()) {
         long sym = -1;
@@ -692,9 +697,9 @@ bool cata_tiles::draw_from_id_string(const std::string &id, TILE_CATEGORY catego
                 col = t->color;
             }
         } else if (category == C_ITEM) {
-            const itype *i = item_controller->find_template(id);
-            sym = i->sym;
-            col = i->color;
+            const auto tmp = item( id, 0 );
+            sym = tmp.symbol();
+            col = tmp.color();
         }
         // Special cases for walls
         switch(sym) {

@@ -673,7 +673,7 @@
                 "lighter",
                 "mag_porn",
                 "sunglasses",
-                "holster"
+                "sholster"
             ],
             "male": [
                 "boxer_shorts"
@@ -945,7 +945,7 @@
                 "dress_shirt",
                 "skinny_tie",
                 "waistcoat",
-                "holster",
+                "sholster",
                 "trenchcoat",
                 "badge_detective",
                 "gloves_leather",
@@ -1031,6 +1031,7 @@
                 "socks",
                 "boots_steel",
                 "pants_cargo",
+                "jacket_flannel",
                 "compbow",
                 "arrow_cf",
                 "knife_hunting",
@@ -1107,7 +1108,7 @@
         "type": "profession",
         "ident": "backpacker",
         "name": "Backpacker",
-        "description": "You've travelled for a living, sightseeing here and there, and living off your parents' trust fund.  But now they're gone, and the only thing between you and death is the open road and your backpack.",
+        "description": "You've traveled for a living, sightseeing here and there, and living off your parents' trust fund.  But now they're gone, and the only thing between you and death is the open road and your backpack.",
         "points": 0,
         "items": {
             "both": [
@@ -3138,14 +3139,15 @@
                 "socks",
                 "fishing_waders",
                 "knife_hunting",
-                "moonshine",
                 "knit_scarf",
                 "lighter",
                 "fishing_rod_professional",
+                "fish_bait_fish",
                 "fish_trap",
                 "vest",
                 "hat_boonie",
-                "jacket_flannel"
+                "jacket_flannel",
+                "sheath"
             ],
             "male": [
                 "boxer_shorts"

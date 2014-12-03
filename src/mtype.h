@@ -109,7 +109,7 @@ enum m_flag {
     MF_REVIVES,             // Monster corpse will revive after a short period of time
     MF_CHITIN,              // May produce chitin when butchered
     MF_VERMIN,              // Creature is too small for normal combat, butchering, etc.
-    MF_NO_GIBS,             // Creature won't leave gibs / meat chunks when killed with huge damage.
+    MF_NOGIB,             // Creature won't leave gibs / meat chunks when killed with huge damage.
     MF_HUNTS_VERMIN,        // Creature uses vermin as a food source
     MF_SMALL_BITER,         // Creature can cause a painful, non-damaging bite
     MF_LARVA,               // Creature is a larva. Currently used for gib and blood handling.
@@ -124,7 +124,21 @@ enum m_flag {
     MF_CBM_TECH,            // May produce a bionic from bionics_tech when butchered.
     MF_CBM_SUBS,            // May produce a bionic from bionics_subs when butchered.
     MF_FISHABLE,            // Its fishable.
+    MF_GROUP_BASH,          // Monsters that can pile up against obstacles and add their strength together to break them.
     MF_MAX                  // Sets the length of the flags - obviously must be LAST
+};
+
+/** Used to store monster effects placed on attack */
+struct mon_effect_data
+{
+    std::string id;
+    int duration;
+    body_part bp;
+    bool permanent;
+    int chance;
+    
+    mon_effect_data(std::string nid, int dur, body_part nbp, bool perm, int nchance) :
+                    id(nid), duration(dur), bp(nbp), permanent(perm), chance(nchance) {};
 };
 
 struct mtype {
@@ -147,6 +161,9 @@ struct mtype {
 
         std::bitset<MF_MAX> bitflags;
         std::bitset<N_MONSTER_TRIGGERS> bitanger, bitfear, bitplacate;
+        
+        /** Stores effect data for effects placed on attack */
+        std::vector<mon_effect_data> atk_effs;
 
         int difficulty; // Used all over; 30 min + (diff-3)*30 min = earliest appearance
         int agro;       // How likely to attack; -100 to 100

@@ -4,6 +4,7 @@
 #include "item_factory.h"
 #include "debug.h"
 #include "json.h"
+#include "mapsharing.h"
 
 #include <sstream>
 #include <fstream>
@@ -198,7 +199,7 @@ struct artifact_armor_form_datum {
     int warmth;
     int storage;
     int melee_bash, melee_cut, melee_hit;
-    std::bitset<13> covers;
+    std::bitset<num_bp> covers;
     bool plural;
     artifact_armor_mod available_mods[5];
 };
@@ -657,7 +658,7 @@ std::string new_artifact()
                 art->volume += weapon->volume;
                 art->weight += weapon->weight;
                 art->melee_dam += rng(weapon->bash_min, weapon->bash_max);
-                art->melee_cut += rng(weapon->bash_min, weapon->bash_max);
+                art->melee_cut += rng(weapon->cut_min, weapon->cut_max);
                 art->m_to_hit += rng(weapon->to_hit_min, weapon->to_hit_max);
                 if( weapon->tag != "" ) {
                     art->item_tags.insert(weapon->tag);
@@ -1123,8 +1124,8 @@ void it_artifact_tool::deserialize(JsonObject &jo)
     }
     // Assumption, perhaps dangerous, that we won't wind up with m1 and m2 and
     // a materials array in our serialized objects at the same time.
-    if (jo.has_array("material")) {
-        JsonArray jarr = jo.get_array("material");
+    if (jo.has_array("materials")) {
+        JsonArray jarr = jo.get_array("materials");
         for (int i = 0; i < jarr.size(); ++i) {
             materials.push_back(jarr.get_string(i));
         }
@@ -1195,8 +1196,8 @@ void it_artifact_armor::deserialize(JsonObject &jo)
     }
     // Assumption, perhaps dangerous, that we won't wind up with m1 and m2 and
     // a materials array in our serialized objects at the same time.
-    if (jo.has_array("material")) {
-        JsonArray jarr = jo.get_array("material");
+    if (jo.has_array("materials")) {
+        JsonArray jarr = jo.get_array("materials");
         for (int i = 0; i < jarr.size(); ++i) {
             materials.push_back(jarr.get_string(i));
         }
@@ -1225,6 +1226,41 @@ void it_artifact_armor::deserialize(JsonObject &jo)
     JsonArray ja = jo.get_array("effects_worn");
     while (ja.has_more()) {
         effects_worn.push_back((art_effect_passive)ja.next_int());
+    }
+}
+
+bool save_artifacts( const std::string &path )
+{
+    std::ofstream fout;
+    try {
+        fout.exceptions( std::ios::badbit | std::ios::failbit );
+
+        fopen_exclusive( fout, path.c_str(), std::ofstream::trunc );
+        if( !fout.is_open() ) {
+            return true; // trick game into thinking it was saved
+        }
+
+        JsonOut json( fout );
+        json.start_array();
+        for( auto & p : item_controller->get_all_itypes() ) {
+            it_artifact_tool *art_tool = dynamic_cast<it_artifact_tool *>( p.second );
+            it_artifact_armor *art_armor = dynamic_cast<it_artifact_armor *>( p.second );
+            if( art_tool != nullptr ) {
+                json.write( *art_tool );
+            } else if( art_armor != nullptr ) {
+                json.write( *art_armor );
+            }
+        }
+        json.end_array();
+        fclose_exclusive( fout, path.c_str() );
+
+        return true;
+    } catch( std::ios::failure & ) {
+        if( fout.is_open() ) {
+            fclose_exclusive( fout, path.c_str() );
+        }
+        popup( _( "Failed to save artifacts to %s" ), path.c_str() );
+        return false;
     }
 }
 

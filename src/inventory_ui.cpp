@@ -2,7 +2,6 @@
 #include "output.h"
 #include "uistate.h"
 #include "translations.h"
-#include "item_factory.h"
 #include "options.h"
 #include "messages.h"
 #include <string>
@@ -182,8 +181,8 @@ class inventory_selector
 
 void inventory_selector::make_item_list(const indexed_invslice &slice, const item_category *def_cat)
 {
-    for (indexed_invslice::const_iterator a = slice.begin(); a != slice.end(); ++a) {
-        const indexed_invslice::value_type &scit = *a;
+    for( const auto &scit : slice ) {
+
         // That entry represents the item stack
         const itemstack_or_category item_entry(scit);
         const item_category *category = def_cat;
@@ -363,14 +362,14 @@ void inventory_selector::print_right_column() const
         mvwprintz(w_inv, drp_line, right_column_offset, c_cyan, "%c + %s", invlet, item_name.c_str());
         drp_line++;
     }
-    for (drop_map::const_iterator a = dropping.begin(); a != dropping.end(); ++a) {
-        if (a->first < 0) { // worn or wielded item, already displayed above
+    for( const auto &elem : dropping ) {
+        if( elem.first < 0 ) { // worn or wielded item, already displayed above
             continue;
         }
-        const std::list<item> &stack = u.inv.const_stack(a->first);
+        const std::list<item> &stack = u.inv.const_stack( elem.first );
         const item &it = stack.front();
         const char invlet = invlet_or_space(it);
-        const int count = a->second;
+        const int count = elem.second;
         const int display_count = (count == -1) ? (it.charges >= 0) ? it.charges : stack.size() : count;
         const nc_color col = it.color_in_inventory();
         std::string item_name = it.tname( display_count );
@@ -421,13 +420,13 @@ void inventory_selector::display() const
         // (can be affected by various traits).
         player tmp = g->u;
         // first round: remove weapon & worn items, start with larges worn index
-        for (drop_map::const_iterator a = dropping.begin(); a != dropping.end(); ++a) {
-            if (a->first == -1 && a->second == -1) {
+        for( const auto &elem : dropping ) {
+            if( elem.first == -1 && elem.second == -1 ) {
                 tmp.remove_weapon();
-            } else if (a->first == -1 && a->second != -1) {
-                tmp.weapon.charges -= a->second;
-            } else if (a->first < 0) {
-                tmp.worn.erase(tmp.worn.begin() + player::worn_position_to_index(a->first));
+            } else if( elem.first == -1 && elem.second != -1 ) {
+                tmp.weapon.charges -= elem.second;
+            } else if( elem.first < 0 ) {
+                tmp.worn.erase( tmp.worn.begin() + player::worn_position_to_index( elem.first ) );
             }
         }
         remove_dropping_items(tmp);
@@ -468,8 +467,8 @@ inventory_selector::inventory_selector(bool m, bool c, const std::string &t)
     if (compare || multidrop) {
         left_column_width = 40;
         left_column_offset = 0;
-        middle_column_width = 40;
-        right_column_width = TERMX - left_column_width - middle_column_width - 2;
+        middle_column_width = std::min<int>( TERMX - left_column_width - 1, 40 );
+        right_column_width = std::max<int>( 0, TERMX - left_column_width - middle_column_width - 2 );
     } else {
         left_column_width = TERMX / 2;
         left_column_offset = 0;
@@ -607,11 +606,11 @@ void inventory_selector::select_item_by_position(const int &position)
 
         //skip headers
         int iHeaderOffset = 0;
-        for (size_t i = 0; i < items.size(); ++i) {
-            if (items[i].it == NULL) {
+        for( auto &item : items ) {
+            if( item.it == NULL ) {
                 iHeaderOffset++;
 
-            } else if (items[i].item_pos == pos) {
+            } else if( item.item_pos == pos ) {
                 break;
             }
         }
@@ -820,6 +819,14 @@ int game::inv_for_liquid(const item &liquid, const std::string title, bool auto_
     return display_slice(reduced_inv, title);
 }
 
+int game::inv_for_salvage(const std::string title)
+{
+    u.inv.restack(&u);
+    u.inv.sort();
+    indexed_invslice reduced_inv = u.inv.slice_filter_by_salvageability();
+    return display_slice(reduced_inv, title);
+}
+
 item *game::inv_map_for_liquid(const item &liquid, const std::string title)
 {
     std::vector <item> &here = m.i_at(g->u.posx, g->u.posy);
@@ -831,19 +838,19 @@ item *game::inv_map_for_liquid(const item &liquid, const std::string title)
     LIQUID_FILL_ERROR error;
 
     std::set<std::string> dups;
-    for( auto item_iter = here.begin(); item_iter != here.end(); ++item_iter ) {
-        if( item_iter->get_remaining_capacity_for_liquid(liquid, error) > 0 ) {
-            if( dups.count( item_iter->tname()) == 0 ) {
-                grounditems.push_back( std::list<item>(1, *item_iter) );
+    for( auto &elem : here ) {
+        if( elem.get_remaining_capacity_for_liquid( liquid, error ) > 0 ) {
+            if( dups.count( elem.tname() ) == 0 ) {
+                grounditems.push_back( std::list<item>( 1, elem ) );
 
                 if( grounditems.size() <= 10 ) {
                     grounditems.back().front().invlet = '0' + grounditems.size() - 1;
                 } else {
                     grounditems.back().front().invlet = ' ';
                 }
-                dups.insert( item_iter->tname() );
+                dups.insert( elem.tname() );
 
-                ground_containers.push_back( &*item_iter );
+                ground_containers.push_back( &elem );
             }
         }
     }

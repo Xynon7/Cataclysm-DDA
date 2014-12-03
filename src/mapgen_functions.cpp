@@ -514,14 +514,15 @@ void mapgen_forest_general(map *m, oter_id terrain_type, mapgendata dat, int tur
             }
             int rn = rng(0, forest_chance);
             if ((forest_chance > 0 && rn > 13) || one_in(100 - forest_chance)) {
-                std::array<std::array<int, 9>, 2> tree_chances = {{
+                std::array<std::array<int, 10>, 2> tree_chances = {{
                         // todo: JSONize this array!
                         // Ensure that these one_in chances
                         // (besides the last) don't add up to more than 1 in 1
                         // Reserve the last one (1 in 1) for simple trees that fill up the rest.
-                        {{ 250, 300, 300, 350, 350, 350, 128, 16, 1 }},
+                        {{ 250, 300, 300, 350, 350, 350, 128, 16, 16, 1 }},
                         {{ t_tree_apple, t_tree_pear, t_tree_cherry, t_tree_peach,
-                           t_tree_apricot, t_tree_plum, t_tree_deadpine, t_tree_pine, t_tree}}
+                           t_tree_apricot, t_tree_plum, t_tree_deadpine, t_tree_pine, t_tree_blackjack,
+                           t_tree}}
                     }};
                 double earlier_chances = 0;
                 // Remember the earlier chances to calculate the sliding errors
@@ -1583,15 +1584,17 @@ void mapgen_bridge(map *m, oter_id terrain_type, mapgendata dat, int turn, float
     (void)dat;
     for (int i = 0; i < SEEX * 2; i++) {
         for (int j = 0; j < SEEY * 2; j++) {
-            if (i < 4 || i >= SEEX * 2 - 4) {
+            if (i < 2 || i >= SEEX * 2 - 2) {
                 m->ter_set(i, j, t_water_dp);
-            } else if (i == 4 || i == SEEX * 2 - 5) {
-                m->ter_set(i, j, t_railing_v);
+            } else if (i == 2 || i == SEEX * 2 - 3) {
+                m->ter_set(i, j, t_guardrail_bg_dp);
+            } else if (i == 3 || i == SEEX * 2 - 4) {
+                m->ter_set(i, j, t_sidewalk_bg_dp);
             } else {
                 if ((i == SEEX - 1 || i == SEEX) && j % 4 != 0) {
-                    m->ter_set(i, j, t_pavement_y);
+                    m->ter_set(i, j, t_pavement_y_bg_dp);
                 } else {
-                    m->ter_set(i, j, t_pavement);
+                    m->ter_set(i, j, t_pavement_bg_dp);
                 }
             }
         }
@@ -2026,9 +2029,13 @@ void mapgen_gas_station(map *m, oter_id terrain_type, mapgendata dat, int, float
         else vset2 += left_w;
         m->place_vending(vset2,top_w-1, type2);
     }
-    //ATM
     if(rng(0,1)) {
+        //ATM
         m->ter_set(vset - 1, top_w-1, t_atm);
+    } else {
+        //charging rack
+        m->furn_set(vset - 1, top_w-1, f_rack);
+        m->place_items("gas_charging_rack", 100, vset - 1, top_w-1, vset - 1, top_w-1, false, 0);
     }
     //
     m->ter_set(center_w, rng(middle_w + 1, bottom_w - 1), t_door_c);
@@ -2360,8 +2367,24 @@ void house_room(map *m, room_type type, int x1, int y1, int x2, int y2, mapgenda
         placed = "softdrugs";
         chance = 72;
         m->furn_set(x2 - 1, y2 - 2, f_bathtub);
-        if (!((m->ter(x2 - 3, y2 - 2) == t_wall_v) || (m->ter(x2 - 3, y2 - 2) == t_wall_h))) {
-            m->furn_set(x2 - 3, y2 - 2, f_sink);
+        if (one_in(3) && !((m->ter(x2 - 1, y2 - 3) == t_wall_h) || (m->ter(x2 - 1, y2 - 3) == t_wall_v))) {
+            m->furn_set(x2 - 1, y2 - 3, f_bathtub);
+        }
+        if (!((m->furn(x1 + 1, y2 - 2) == f_toilet) || (m->furn(x1 + 1, y2 - 2) == f_bathtub))) {
+            m->furn_set(x1 + 1, y2 - 2, f_sink);
+        }
+        if (one_in(4)) {
+            for (int x = x1 + 1; x <= x2 - 1; x++) {
+                for (int y = y1 + 1; y <= y2 - 1; y++) {
+                    m->ter_set(x, y, t_linoleum_white);
+                }
+            }
+        } else if (one_in(4)) {
+            for (int x = x1 + 1; x <= x2 - 1; x++) {
+                for (int y = y1 + 1; y <= y2 - 1; y++) {
+                    m->ter_set(x, y, t_linoleum_gray);
+                }
+            }
         }
         break;
     default:
@@ -3482,11 +3505,11 @@ void mapgen_s_gun(map *m, oter_id terrain_type, mapgendata dat, int, float densi
                            (j == 16 && (i == 5 || i == 8 || i == 11 || i == 14 || i == 17))) {
                     m->set(i, j, t_floor, f_counter);
                 } else if ((j == 6 && ((i > 4 && i < 8) || (i > 15 && i < 19)))) {
-                    m->ter_set(i, j, t_window);
+                    m->ter_set(i, j, t_window_bars_alarm);
                 } else if ((j == 14 && i > 3 && i < 15)) {
-                    m->ter_set(i, j, t_wall_glass_h);
+                    m->ter_set(i, j, t_window_bars_alarm);
                 } else if (j == 16 && i == SEEX * 2 - 4) {
-                    m->ter_set(i, j, t_door_c);
+                    m->ter_set(i, j, t_door_metal_pickable);
                 } else if (((j == 6 || j == SEEY * 2 - 1) && i > 1 && i < SEEX * 2 - 2) ||
                            ((j == 16 || j == 14) && i > 2 && i < SEEX * 2 - 3)) {
                     m->ter_set(i, j, t_wall_h);
@@ -3506,8 +3529,8 @@ void mapgen_s_gun(map *m, oter_id terrain_type, mapgendata dat, int, float densi
                 }
             }
         }
-        m->ter_set(rng(11, 14), 6, t_door_c);
-        m->ter_set(rng(5, 14), 14, t_door_c);
+        m->ter_set(rng(11, 14), 6, t_door_metal_pickable);
+        m->ter_set(rng(5, 14), 14, t_door_metal_pickable);
         m->place_items("pistols", 70, 12,  9, 13, 11, false, 0);
         m->place_items("shotguns", 60, 16,  9, 16, 11, false, 0);
         m->place_items("rifles", 80, 20,  7, 20, 12, false, 0);
@@ -3872,7 +3895,7 @@ void mapgen_basement_junk(map *m, oter_id terrain_type, mapgendata dat, int turn
     for (int i = 1; i <= 23; i++) {
             for (int j = 1; j <= 23; j++) {
                 if (one_in(1600)) {
-                    m->furn_set(i, j, f_safe_l);
+                    m->furn_set(i, j, "f_gun_safe_el");
                     if (one_in(2)){
                         m->spawn_item(i, j, "9mm", 2);
                         m->spawn_item(i, j, "usp_9mm");
@@ -3953,7 +3976,7 @@ void mapgen_basement_guns(map *m, oter_id terrain_type, mapgendata dat, int turn
     m->place_items("gunxtras", 88, 2, 9, SEEX * 2 - 7, 9, false, 0);
     m->place_items("weapons", 88, SEEX * 2 - 6, 9, SEEX * 2 - 3, 9, false, 0);
     // Chance of zombies in the basement, only appear north of the anteroom the stairs are in.
-    m->place_spawns("GROUP_ZOMBIE", 2, 1, 1, SEEX * 2 - 1, SEEX * 2 - 5, density);
+    m->place_spawns("GROUP_PREPPER_HOUSE", 4, 1, 1, SEEX * 2 - 1, SEEX * 2 - 5, density);
 }
 
 void mapgen_basement_survivalist(map *m, oter_id terrain_type, mapgendata dat, int turn, float density)
@@ -3977,7 +4000,7 @@ void mapgen_basement_survivalist(map *m, oter_id terrain_type, mapgendata dat, i
     m->place_items("bed",  60, 1, 1, 1, 2, false, 0);
     m->place_items("bed",  60, SEEX * 2 - 2, 1, SEEX * 2 - 2, 2, false, 0);
     // Chance of zombies in the basement, only appear north of the anteroom the stairs are in.
-    m->place_spawns("GROUP_ZOMBIE", 2, 1, 1, SEEX * 2 - 1, SEEX * 2 - 5, density);
+    m->place_spawns("GROUP_PREPPER_HOUSE", 4, 1, 1, SEEX * 2 - 1, SEEX * 2 - 5, density);
 }
 
 void mapgen_basement_chemlab(map *m, oter_id terrain_type, mapgendata dat, int turn, float density)
@@ -6270,7 +6293,9 @@ void mapgen_cavern(map *m, oter_id, mapgendata dat, int, float)
             m->spawn_item(x, y, "hat_hard");
         }
         while (!one_in(3)) {
-            m->put_items_from("cannedfood", 3, x, y, 0, 0, 0);
+            for( int i = 0; i < 3; ++i ) {
+                m->put_items_from_loc( "cannedfood", x, y, 0 );
+            }
         }
     }
 

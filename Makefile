@@ -75,8 +75,7 @@ endif
 #DEFINES += -DDEBUG_ENABLE_MAP_GEN
 #DEFINES += -DDEBUG_ENABLE_GAME
 
-VERSION = 0.A
-
+VERSION = 0.B
 
 TARGET = cataclysm
 TILESTARGET = cataclysm-tiles
@@ -247,10 +246,10 @@ ifdef LUA
     LDFLAGS += -llua
   else
     # On unix-like systems, use pkg-config to find lua
-    LDFLAGS += $(shell pkg-config --silence-errors --libs lua5.1)
-    CXXFLAGS += $(shell pkg-config --silence-errors --cflags lua5.1)
-    LDFLAGS += $(shell pkg-config --silence-errors --libs lua-5.1)
-    CXXFLAGS += $(shell pkg-config --silence-errors --cflags lua-5.1)
+    LDFLAGS += $(shell pkg-config --silence-errors --libs lua5.2)
+    CXXFLAGS += $(shell pkg-config --silence-errors --cflags lua5.2)
+    LDFLAGS += $(shell pkg-config --silence-errors --libs lua-5.2)
+    CXXFLAGS += $(shell pkg-config --silence-errors --cflags lua-5.2)
     LDFLAGS += $(shell pkg-config --silence-errors --libs lua)
     CXXFLAGS += $(shell pkg-config --silence-errors --cflags lua)
   endif

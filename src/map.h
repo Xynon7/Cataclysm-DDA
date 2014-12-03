@@ -12,7 +12,6 @@
 #include <unordered_set>
 
 #include "mapdata.h"
-#include "mapitems.h"
 #include "overmap.h"
 #include "item.h"
 #include "json.h"
@@ -40,7 +39,8 @@ struct wrapped_vehicle{
 };
 
 typedef std::vector<wrapped_vehicle> VehicleList;
-typedef std::vector< std::list<item*> > itemslice;
+typedef std::vector< std::pair< item*, int > > itemslice;
+typedef std::string items_location;
 
 /**
  * Manage and cache data about a part of the map.
@@ -579,8 +579,10 @@ void add_corpse(int x, int y);
         void remove_field( const int x, const int y, const field_id field_to_remove );
  bool process_fields(); // See fields.cpp
  bool process_fields_in_submap(submap * const current_submap, const int submap_x, const int submap_y); // See fields.cpp
- void step_in_field(const int x, const int y); // See fields.cpp
- void mon_in_field(const int x, const int y, monster *z); // See fields.cpp
+        /**
+         * Apply field effects to the creature when it's on a square with fields.
+         */
+        void creature_in_field( Creature &critter );
 
 // Computers
  computer* computer_at(const int x, const int y);
@@ -605,12 +607,27 @@ void add_corpse(int x, int y);
  void place_toilet(const int x, const int y, const int charges = 6 * 4); // 6 liters at 250 ml per charge
  void place_vending(int x, int y, std::string type);
  int place_npc(int x, int y, std::string type);
+ /**
+  * Place items from item group in the rectangle (x1,y1) - (x2,y2). Several items may be spawned
+  * on different places. Several items may spawn at once (at one place) when the item group says
+  * so (uses @ref item_group::items_from which may return several items at once).
+  * @param chance Chance for more items. A chance of 100 creates 1 item all the time, otherwise
+  * it's the chance that more items will be created (place items until the random roll with that
+  * chance fails). The chance is used for the first item as well, so it may not spawn an item at
+  * all. Values <= 0 or > 100 are invalid.
+  * @param ongrass If false the items won't spawn on flat terrain (grass, floor, ...).
+  * @param turn The birthday that the created items shall have.
+  * @return The number of placed items.
+  */
  int place_items(items_location loc, const int chance, const int x1, const int y1,
                   const int x2, const int y2, bool ongrass, const int turn, bool rand = true);
+ /**
+  * Place items from an item group at (x,y). Places as much items as the item group says.
+  * (Most item groups are distributions and will only create one item.)
+  * @param turn The birthday that the created items shall have.
+  * @return The number of placed items.
+  */
  int put_items_from_loc(items_location loc, const int x, const int y, const int turn = 0);
-// put_items_from puts exactly num items, based on chances
- void put_items_from(items_location loc, const int num, const int x, const int y, const int turn = 0,
-                    const int quantity = 0, const long charges = 0, const int damlevel = 0, const bool rand = true);
  void spawn_an_item(const int x, const int y, item new_item,
                     const long charges, const int damlevel);
  // Similar to spawn_an_item, but spawns a list of items, or nothing if the list is empty.
@@ -664,6 +681,41 @@ protected:
             const int gridx, const int gridy);
  void loadn(const int x, const int y, const int z, const int gridx, const int gridy,
             const  bool update_vehicles = true);
+        /**
+         * Fast forward a submap that has just been loading into this map.
+         * This is used to rot and remove rotten items, grow plants, fill funnels etc.
+         */
+        void actualize( const int gridx, const int gridy );
+        /**
+         * Whether the item has to be removed as it has rotten away completely.
+         * @param pnt The point on this map where the items are, used for rot calculation.
+         * @return true if the item has rotten away and should be removed, false otherwise.
+         */
+        bool has_rotten_away( item &itm, const point &pnt ) const;
+        /**
+         * Go through the list of items, update their rotten status and remove items
+         * that have rotten away completely.
+         * @param pnt The point on this map where the items are, used for rot calculation.
+         */
+        void remove_rotten_items( std::vector<item> &items, const point &pnt ) const;
+        /**
+         * Try to fill funnel based items here.
+         * @param pnt The location in this map where to fill funnels.
+         */
+        void fill_funnels( const point pnt );
+        /**
+         * Try to grow a harvestable plant to the next stage(s).
+         */
+        void grow_plant( const point pnt );
+        /**
+         * Try to grow fruits on static plants (not planted by the player)
+         * @param time_since_last_actualize Time (in turns) since this function has been
+         * called the last time.
+         */
+        void restock_fruits( const point pnt, int time_since_last_actualize );
+        void player_in_field( player &u );
+        void monster_in_field( monster &z );
+
  void copy_grid(const int to, const int from);
  void draw_map(const oter_id terrain_type, const oter_id t_north, const oter_id t_east,
                 const oter_id t_south, const oter_id t_west, const oter_id t_neast,
